@@ -6,6 +6,10 @@ Version: 1.9.12 (2025-12-13)
 Delta from 1.9.11:
 - Anthem selectors and pre-game anthem playback
 - Manual goal buttons show team names
+Version: 1.9.12 (2025-12-14)
+
+Delta from 1.9.11:
+- Limit web lockout to auto triggers only so manual presses remain responsive
 """
 
 import os
@@ -56,7 +60,7 @@ NHL_SCOREBOARD_URL = "https://api-web.nhle.com/v1/scoreboard/now"
 NHL_SCHEDULE_URL = "https://api-web.nhle.com/v1/schedule/{date}"
 NHL_GAMECENTER_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
 
-# Show lockout (lockout applies to web/auto; button bypass)
+# Auto-goal lockout (prevents rapid auto-trigger spam; button + manual web bypass)
 WEB_AUTO_LOCKOUT = 8.0
 
 # Pi-only helper button (polled)
@@ -79,7 +83,7 @@ current_config = {}
 
 show_lock = threading.Lock()
 show_active = False
-last_web_show = 0.0
+last_auto_show = 0.0
 
 # Active tracked games (PRE + LIVE candidates)
 active_games = []
@@ -332,20 +336,21 @@ def play_sound(filename: str, volume: float) -> float:
 # ---------------- Light show ----------------
 
 def trigger_show(team: int, source: str):
-    global show_active, last_web_show
+    global show_active, last_auto_show
 
     now = time.time()
     is_button = str(source).startswith("BUTTON")
+    is_auto = str(source).startswith("AUTO")
 
     with show_lock:
         if show_active:
             return
-        if not is_button and now - last_web_show < WEB_AUTO_LOCKOUT:
+        if is_auto and now - last_auto_show < WEB_AUTO_LOCKOUT:
             return
         show_active = True
 
     def run():
-        global show_active, last_web_show
+        global show_active, last_auto_show
         try:
             with config_lock:
                 cfg = current_config.copy()
@@ -376,8 +381,8 @@ def trigger_show(team: int, source: str):
         finally:
             with show_lock:
                 show_active = False
-                if not is_button:
-                    last_web_show = time.time()
+                if is_auto:
+                    last_auto_show = time.time()
 
     threading.Thread(target=run, daemon=True).start()
 
