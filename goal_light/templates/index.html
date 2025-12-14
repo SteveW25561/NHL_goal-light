@@ -1,0 +1,687 @@
+<!doctype html>
+<!-- UI Version: 1.9.11 -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NHL Goal Light</title>
+
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --card:#111826;
+      --card2:#0f1724;
+      --text:#e6edf3;
+      --muted:#9aa4b2;
+      --border:#223047;
+
+      --good-bg:#0d2a16;
+      --good-br:#1f6f3b;
+
+      --bad-bg:#2a1114;
+      --bad-br:#7a2a33;
+
+      --warn-bg:#2a2108;
+      --warn-br:#6a520f;
+
+      --btn:#1b2a40;
+      --btn-br:#2c3f5f;
+      --btn-h:#243a58;
+
+      --btn2:#1a2432;
+      --btn2-br:#2a3a52;
+      --btn2-h:#223145;
+
+      --pill-live-bg: var(--good-bg);
+      --pill-live-br: var(--good-br);
+
+      --pill-pre-bg:#2a2108;
+      --pill-pre-br:#6a520f;
+
+      --banner-green-bg: var(--good-bg);
+      --banner-green-br: var(--good-br);
+
+      --banner-yellow-bg: var(--warn-bg);
+      --banner-yellow-br: var(--warn-br);
+
+      --banner-red-bg: var(--bad-bg);
+      --banner-red-br: var(--bad-br);
+    }
+
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 16px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    h1{ margin:0 0 8px 0; letter-spacing:0.2px; font-size: 22px; }
+    h2{ margin:0 0 10px 0; font-size: 16px; }
+    .muted{ color: var(--muted); }
+    .small{ font-size: 12px; }
+    .hr{ margin: 14px 0; border:0; border-top:1px solid rgba(255,255,255,0.08); }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 860px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, var(--card), var(--card2));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    }
+
+    label{ display:block; margin-top: 10px; font-weight: 650; }
+    select, input[type="text"], input[type="number"], input[type="time"]{
+      width:100%;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b1320;
+      color: var(--text);
+      outline: none;
+    }
+    input[type="range"]{ width: 100%; }
+
+    .row{ display:flex; gap:10px; align-items:center; }
+    .row > *{ flex:1; }
+
+    button{
+      width: 100%;
+      padding: 11px 12px;
+      cursor:pointer;
+      border-radius: 12px;
+      border: 1px solid var(--btn-br);
+      background: var(--btn);
+      color: var(--text);
+      font-weight: 750;
+    }
+    button:hover{ background: var(--btn-h); }
+
+    button.btn-team1{ background: var(--btn); border-color: var(--btn-br); }
+    button.btn-team1:hover{ background: var(--btn-h); }
+
+    button.btn-team2{ background: var(--btn2); border-color: var(--btn2-br); }
+    button.btn-team2:hover{ background: var(--btn2-h); }
+
+    .pill{
+      display:inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      margin-left: 6px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .pill.live{ border-color: var(--pill-live-br); background: var(--pill-live-bg); }
+    .pill.pre{ border-color: var(--pill-pre-br); background: var(--pill-pre-bg); }
+
+    .logo{
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 3px;
+      flex: 0 0 auto;
+    }
+    .logo.md{ width: 44px; height: 44px; border-radius: 10px; padding: 5px; }
+    .logo.lg{ width: 64px; height: 64px; border-radius: 12px; padding: 6px; }
+    .logo.btn{ width: 36px; height: 36px; border-radius: 10px; padding: 5px; }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      font-weight: 850;
+      font-size: 11px;
+      color: var(--muted);
+      flex: 0 0 auto;
+      text-transform: uppercase;
+    }
+    .badge.btn{ width:36px; height:36px; border-radius:10px; font-size:11px; }
+
+    table{ width:100%; border-collapse: collapse; }
+    th, td{ border-bottom: 1px solid rgba(255,255,255,0.06); padding: 8px 6px; text-align:left; }
+    th{ color: var(--muted); font-weight: 700; }
+
+    .btnline{ display:flex; gap:10px; align-items:center; justify-content:center; }
+    .btnline .label{ font-weight: 850; }
+
+    .banners{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 10px 0 14px 0;
+    }
+    .banner{
+      border-radius: 14px;
+      padding: 12px 14px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      display:flex;
+      gap: 14px;
+      align-items:center;
+      flex-wrap: wrap;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .banner.banner-green{ background: var(--banner-green-bg); border-color: var(--banner-green-br); }
+    .banner.banner-yellow{ background: var(--banner-yellow-bg); border-color: var(--banner-yellow-br); }
+    .banner.banner-red{ background: var(--banner-red-bg); border-color: var(--banner-red-br); }
+
+    .banner-left{ display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+    .banner-right{ margin-left:auto; display:flex; gap: 12px; align-items:center; flex-wrap: wrap; justify-content:flex-end; }
+
+    .banner .matchup{ font-weight: 900; letter-spacing: 0.2px; }
+    .banner .score{ font-weight: 900; }
+    .banner .pillish{
+      display:inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.18);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    tr.sched-live td{ background: rgba(17, 92, 46, 0.35); color: var(--text); }
+    tr.sched-pre td{ background: rgba(160, 120, 0, 0.22); color: var(--text); }
+    tr.sched-live td:first-child, tr.sched-pre td:first-child{ border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+    tr.sched-live td:last-child,  tr.sched-pre td:last-child{ border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+  </style>
+
+  <script>
+    const UI_VERSION = "1.9.11";
+
+    function hookRange(idRange, idOut) {
+      const r = document.getElementById(idRange);
+      const o = document.getElementById(idOut);
+      if (!r || !o) return;
+      const update = () => { o.textContent = r.value + "%"; };
+      r.addEventListener("input", update);
+      update();
+    }
+
+    function trySetLogo(imgEl, abbr) {
+      if (!imgEl || !abbr) return;
+
+      const U = (abbr || "").toUpperCase();
+      const L = (abbr || "").toLowerCase();
+
+      const existing = imgEl.getAttribute("src") || "";
+      const candidates = [];
+      if (existing && !existing.endsWith("/")) candidates.push(existing);
+
+      candidates.push(`/static/logos/${U}_light.svg`);
+      candidates.push(`/static/logos/${L}_light.svg`);
+      candidates.push(`/static/logos/${U}.svg`);
+      candidates.push(`/static/logos/${L}.svg`);
+      candidates.push(`/static/logos/${U}_light.png`);
+      candidates.push(`/static/logos/${L}_light.png`);
+      candidates.push(`/static/logos/${U}.png`);
+      candidates.push(`/static/logos/${L}.png`);
+
+      let idx = 0;
+      function next() {
+        if (idx >= candidates.length) {
+          imgEl.style.display = "none";
+          const badge = document.getElementById(imgEl.getAttribute("data-badge-id"));
+          if (badge) badge.style.display = "inline-flex";
+          return;
+        }
+        imgEl.src = candidates[idx++];
+      }
+
+      imgEl.onerror = next;
+      next();
+    }
+
+    function esc(s) {
+      if (s === 0) return "0";
+      if (s === null || s === undefined) return "";
+      return ("" + s)
+        .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+    }
+
+    function setText(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text || "";
+    }
+
+    function updateOpponentButtonFromStatus(data) {
+      // Only relevant when configured Team 2 is NONE (Opponent Mode)
+      const configuredTeam2 = (document.body.getAttribute("data-team2-config") || "").toUpperCase();
+      if (configuredTeam2 !== "NONE") return;
+
+      const abbr = (data && data.team2_effective_abbr) ? ("" + data.team2_effective_abbr).toUpperCase() : "OPP";
+      const img = document.getElementById("team2_logo_img");
+      const badge = document.getElementById("team2_badge");
+      if (!img || !badge) return;
+
+      // Always show the actual opponent abbrev in the badge (e.g., LAK)
+      badge.textContent = abbr || "OPP";
+      badge.style.display = "none"; // will be shown if logo fails
+
+      img.style.display = "";
+      img.setAttribute("alt", abbr || "OPP");
+      img.removeAttribute("src");   // force reload attempts cleanly
+      trySetLogo(img, abbr || "OPP");
+    }
+
+    function updateScheduleFromStatus(activeGames) {
+      if (!activeGames || !activeGames.length) return;
+
+      const map = new Map();
+      activeGames.forEach(g => {
+        const gid = Number(g.id || 0);
+        if (gid) map.set(gid, g);
+      });
+
+      document.querySelectorAll("tr[data-gid]").forEach(tr => {
+        const gid = Number(tr.getAttribute("data-gid") || "0");
+        if (!gid) return;
+
+        const g = map.get(gid);
+        if (!g) return;
+
+        const state = (g.game_state || "").toUpperCase();
+        const awayScore = (g.away_score ?? 0);
+        const homeScore = (g.home_score ?? 0);
+
+        const scoreTd = tr.querySelector('[data-role="sched-score"]');
+        if (scoreTd) scoreTd.textContent = `${awayScore} - ${homeScore}`;
+
+        const stateTd = tr.querySelector('[data-role="sched-state"]');
+        if (stateTd) stateTd.textContent = state || "—";
+
+        tr.classList.remove("sched-live", "sched-pre");
+        if (state === "PRE") tr.classList.add("sched-pre");
+        if (["LIVE","CRIT","OT","SO","SHOOTOUT"].includes(state)) tr.classList.add("sched-live");
+
+        const pill = tr.querySelector('[data-role="sched-pill"]');
+        if (pill) {
+          pill.style.display = (state === "PRE" || ["LIVE","CRIT","OT","SO","SHOOTOUT"].includes(state)) ? "inline-block" : "none";
+          pill.classList.remove("live","pre");
+          if (state === "PRE") { pill.textContent = "PRE"; pill.classList.add("pre"); }
+          else if (["LIVE","CRIT","OT","SO","SHOOTOUT"].includes(state)) { pill.textContent = "LIVE"; pill.classList.add("live"); }
+        }
+      });
+    }
+
+    function renderBannersFromStatus(data) {
+      const container = document.getElementById("banners_dynamic");
+      if (!container) return;
+
+      const banners = (data && data.banners) ? data.banners : [];
+      const asofLocal = (data && data.asof_local) ? data.asof_local : "";
+      const quietLine = (data && data.quiet_line) ? data.quiet_line : "";
+      const currentTimeLocal = (data && data.current_time_local) ? data.current_time_local : "";
+      const backendVersion = (data && data.backend_version) ? data.backend_version : "";
+
+      setText("status_local_time", currentTimeLocal);
+      setText("quiet_status_line", quietLine);
+      setText("footer_versions", `UI v${UI_VERSION} · Backend v${backendVersion || "?"}`);
+
+      if (data && data.active_games) updateScheduleFromStatus(data.active_games);
+      updateOpponentButtonFromStatus(data);
+
+      if (!banners.length) {
+        container.innerHTML = `
+          <div class="banner banner-red">
+            <div class="banner-left">
+              <span class="matchup"><b>No PRE/LIVE candidate</b></span>
+            </div>
+            <div class="banner-right">
+              ${asofLocal ? `<span class="muted small">as of ${esc(asofLocal)}</span>` : ""}
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = banners.map((b, idx) => {
+        const away = (b.away || "").toUpperCase();
+        const home = (b.home || "").toUpperCase();
+
+        const color = (b.banner_color || "").toLowerCase();
+        const cls = (color === "green") ? "banner-green" : (color === "yellow") ? "banner-yellow" : "banner-red";
+
+        const awayScore = (b.away_score ?? "—");
+        const homeScore = (b.home_score ?? "—");
+        const extra = b.extra || "";
+        const startLocal = b.start_local || "";
+        const asofStr = b.asof || asofLocal || "";
+
+        const awayLogo = b.away_logo || `${away}_light.svg`;
+        const homeLogo = b.home_logo || `${home}_light.svg`;
+
+        const awayId = `banner_${idx}_away`;
+        const homeId = `banner_${idx}_home`;
+
+        return `
+          <div class="banner ${cls}">
+            <div class="banner-left">
+              <img id="${awayId}" class="logo lg" data-badge-id="${awayId}_badge" alt="${esc(away)}" src="/static/logos/${esc(awayLogo)}">
+              <span id="${awayId}_badge" class="badge" style="display:none;">${esc(away || "—")}</span>
+
+              <span class="muted" style="font-weight:800;">@</span>
+
+              <img id="${homeId}" class="logo lg" data-badge-id="${homeId}_badge" alt="${esc(home)}" src="/static/logos/${esc(homeLogo)}">
+              <span id="${homeId}_badge" class="badge" style="display:none;">${esc(home || "—")}</span>
+
+              <span class="matchup">${esc(away)} @ ${esc(home)}</span>
+              ${extra ? `<span class="pillish">(${esc(extra)})</span>` : ""}
+              <span class="score">${esc(awayScore)} – ${esc(homeScore)}</span>
+            </div>
+
+            <div class="banner-right">
+              ${asofStr ? `<span class="muted small">as of ${esc(asofStr)}</span>` : ""}
+              ${startLocal ? `<span class="muted small">${esc(startLocal)}</span>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      banners.forEach((b, idx) => {
+        const away = (b.away || "").toUpperCase();
+        const home = (b.home || "").toUpperCase();
+        trySetLogo(document.getElementById(`banner_${idx}_away`), away);
+        trySetLogo(document.getElementById(`banner_${idx}_home`), home);
+      });
+    }
+
+    async function pollStatusLoop() {
+      try {
+        const r = await fetch("/status", { cache: "no-store" });
+        const data = await r.json();
+        renderBannersFromStatus(data);
+
+        const banners = (data && data.banners) ? data.banners : [];
+        const anyLive = banners.some(b => (b && (b.is_live || (b.banner_color || "").toLowerCase() === "green")));
+        const anyPre  = banners.some(b => (b && (b.is_pre  || (b.banner_color || "").toLowerCase() === "yellow")));
+
+        const basePollSec = parseFloat(document.body.getAttribute("data-live-poll-sec") || "5") || 5;
+        let nextMs = 60000;
+        if (anyLive) nextMs = Math.max(1000, basePollSec * 1000);
+        else if (anyPre) nextMs = 10000;
+
+        setTimeout(pollStatusLoop, nextMs);
+      } catch (e) {
+        setTimeout(pollStatusLoop, 15000);
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      hookRange("team1_volume", "team1_volume_out");
+      hookRange("team2_volume", "team2_volume_out");
+
+      const t1abbr = document.body.getAttribute("data-team1") || "";
+      trySetLogo(document.getElementById("team1_logo_img"), t1abbr);
+
+      // Team2 initial load:
+      // - if opponent mode, show generic OPP until first /status arrives
+      const configuredTeam2 = (document.body.getAttribute("data-team2-config") || "").toUpperCase();
+      if (configuredTeam2 !== "NONE") {
+        trySetLogo(document.getElementById("team2_logo_img"), configuredTeam2);
+      } else {
+        trySetLogo(document.getElementById("team2_logo_img"), "OPP");
+      }
+
+      pollStatusLoop();
+    });
+  </script>
+</head>
+
+<body
+  data-team1="{{ cfg.team1 }}"
+  data-team2-config="{{ cfg.team2 }}"
+  data-live-poll-sec="{{ cfg.poll_interval_seconds }}"
+>
+
+  <h1>🏒 NHL Goal Light 🚨</h1>
+
+  <div class="muted small" style="margin-bottom:10px;">
+    Host: <b>{{ host }}</b> |
+    App: <b>{{ app_version }}</b> |
+    Local time: <b id="status_local_time">{{ current_time }}</b>
+  </div>
+
+  <div class="banners" id="banners_dynamic">
+    <div class="banner banner-red">
+      <div class="banner-left">
+        <span class="matchup"><b>Status loading…</b></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="muted small" style="margin-top:-6px; margin-bottom: 12px;">
+    Quiet Hours: <span id="quiet_status_line">{{ "ON (audio muted)" if quiet_active else "OFF" }}</span>
+  </div>
+
+  <div class="grid">
+
+    <div class="card">
+      <h2>Manual Goal Buttons</h2>
+
+      <div class="row">
+        <form method="POST" action="{{ url_for('trigger_team1') }}">
+          <button type="submit" class="btn-team1">
+            <span class="btnline">
+              <img id="team1_logo_img" class="logo btn" data-badge-id="team1_badge" alt="{{ cfg.team1 }}">
+              <span id="team1_badge" class="badge btn" style="display:none;">{{ cfg.team1 }}</span>
+              <span class="label">GOAL Team 1</span>
+            </span>
+          </button>
+        </form>
+
+        <form method="POST" action="{{ url_for('trigger_team2') }}">
+          <button type="submit" class="btn-team2">
+            <span class="btnline">
+              <img id="team2_logo_img" class="logo btn" data-badge-id="team2_badge" alt="{{ cfg.team2 }}">
+              <span id="team2_badge" class="badge btn" style="display:none;">
+                {% if cfg.team2 == "NONE" %}OPP{% else %}{{ cfg.team2 }}{% endif %}
+              </span>
+              <span class="label">GOAL Team 2</span>
+            </span>
+          </button>
+        </form>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Tracked Schedule (next ~30 days)</h2>
+        <form method="POST" action="{{ url_for('refresh_schedule') }}">
+          <button type="submit">Refresh Schedule</button>
+        </form>
+      </div>
+
+      <div class="muted small" style="margin-top:6px;">
+        {{ schedule_label }}
+      </div>
+
+      <table style="margin-top:10px;">
+        <thead>
+          <tr>
+            <th>Local time</th>
+            <th>Matchup</th>
+            <th>State</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in games %}
+            <tr
+              data-gid="{{ g.id }}"
+              class="{% if g.row_class == 'live' %}sched-live{% elif g.row_class == 'pre' %}sched-pre{% endif %}"
+            >
+              <td>{{ g.time_local }}</td>
+              <td style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <img class="logo md" data-badge-id="sched_{{ loop.index }}_away_badge" alt="{{ g.away }}"
+                     src="{{ url_for('static', filename='logos/' ~ (g.away ~ '_light.svg')) }}"
+                     onerror="trySetLogo(this, '{{ g.away }}');">
+                <span id="sched_{{ loop.index }}_away_badge" class="badge" style="display:none;">{{ g.away }}</span>
+
+                <span class="muted">@</span>
+
+                <img class="logo md" data-badge-id="sched_{{ loop.index }}_home_badge" alt="{{ g.home }}"
+                     src="{{ url_for('static', filename='logos/' ~ (g.home ~ '_light.svg')) }}"
+                     onerror="trySetLogo(this, '{{ g.home }}');">
+                <span id="sched_{{ loop.index }}_home_badge" class="badge" style="display:none;">{{ g.home }}</span>
+
+                <span style="font-weight:850;">{{ g.matchup }}</span>
+
+                <span data-role="sched-pill" class="pill {% if g.row_class == 'pre' %}pre{% elif g.row_class == 'live' %}live{% endif %}"
+                      style="{% if g.row_class in ['pre','live'] %}display:inline-block;{% else %}display:none;{% endif %}">
+                  {% if g.row_class == 'pre' %}PRE{% elif g.row_class == 'live' %}LIVE{% endif %}
+                </span>
+              </td>
+              <td data-role="sched-state">{{ g.state }}</td>
+              <td data-role="sched-score">{{ g.away_score }} - {{ g.home_score }}</td>
+            </tr>
+          {% endfor %}
+          {% if not games or games|length == 0 %}
+            <tr><td colspan="4" class="muted">No games found for current tracked team(s).</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+
+      <div class="muted small" style="margin-top:10px;">
+        Data from NHL schedule/scoreboard APIs (UTC-based). We highlight games involving your tracked team(s).
+      </div>
+
+      <div class="muted small" style="margin-top:10px;">
+        <span id="footer_versions">UI v{{ ui_version }} · Backend v{{ app_version }}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Configuration</h2>
+
+      <form method="POST" action="{{ url_for('config') }}">
+
+        <div class="grid">
+          <div>
+            <label>Team 1</label>
+            <select name="team1">
+              {% for abbr, name in teams %}
+                <option value="{{ abbr }}" {% if cfg.team1 == abbr %}selected{% endif %}>{{ abbr }} — {{ name }}</option>
+              {% endfor %}
+            </select>
+
+            {% set t1s = (cfg.team1_sound or '')|lower %}
+            <label>Team 1 Sound</label>
+            <select name="team1_sound">
+              <option value="None (no lights, no sound)" {% if 'no lights' in t1s %}selected{% endif %}>None (no lights, no sound)</option>
+              <option value="None (lights only)" {% if t1s.startswith('none') and ('no lights' not in t1s) %}selected{% endif %}>None (lights only)</option>
+              {% for f in sound_files %}
+                <option value="{{ f }}" {% if cfg.team1_sound == f %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+
+            <label>Team 1 Volume: <span class="muted" id="team1_volume_out">{{ cfg.team1_volume }}%</span></label>
+            <input id="team1_volume" type="range" name="team1_volume" min="0" max="100" value="{{ cfg.team1_volume }}">
+          </div>
+
+          <div>
+            <label>Team 2</label>
+            <select name="team2">
+              <option value="NONE" {% if cfg.team2 == 'NONE' %}selected{% endif %}>NONE — Opponent Mode</option>
+              {% for abbr, name in teams %}
+                <option value="{{ abbr }}" {% if cfg.team2 == abbr %}selected{% endif %}>{{ abbr }} — {{ name }}</option>
+              {% endfor %}
+            </select>
+
+            {% set t2s = (cfg.team2_sound or '')|lower %}
+            <label>Team 2 Sound</label>
+            <select name="team2_sound">
+              <option value="None (no lights, no sound)" {% if 'no lights' in t2s %}selected{% endif %}>None (no lights, no sound)</option>
+              <option value="None (lights only)" {% if t2s.startswith('none') and ('no lights' not in t2s) %}selected{% endif %}>None (lights only)</option>
+              {% for f in sound_files %}
+                <option value="{{ f }}" {% if cfg.team2_sound == f %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+
+            <label>Team 2 Volume: <span class="muted" id="team2_volume_out">{{ cfg.team2_volume }}%</span></label>
+            <input id="team2_volume" type="range" name="team2_volume" min="0" max="100" value="{{ cfg.team2_volume }}">
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:12px;">
+          <div>
+            <label>Auto-goals</label>
+            <label style="font-weight:500; margin:0;">
+              <input type="checkbox" name="auto_goals_enabled" value="1" {% if cfg.auto_goals_enabled %}checked{% endif %}>
+              Enable auto goal detection
+            </label>
+
+            <label style="margin-top:10px;">Stream delay (seconds)</label>
+            <input type="number" step="0.1" name="stream_delay" value="{{ cfg.stream_delay }}">
+
+            <label>Poll interval during live games (seconds)</label>
+            <input type="number" step="0.5" name="poll_interval_seconds" value="{{ cfg.poll_interval_seconds }}">
+          </div>
+
+          <div>
+            <label>Physical Button (Pi-only)</label>
+            <label style="font-weight:500; margin:0;">
+              <input type="checkbox" name="physical_button_enabled" value="1" {% if cfg.physical_button_enabled %}checked{% endif %}>
+              Enable button (short press = Team 1, long press = Team 2)
+            </label>
+
+            <label style="margin-top:10px;">Timezone</label>
+            <select name="timezone">
+              {% for tz, label in timezones %}
+                <option value="{{ tz }}" {% if cfg.timezone == tz %}selected{% endif %}>{{ label }} ({{ tz }})</option>
+              {% endfor %}
+            </select>
+
+            <div class="hr"></div>
+
+            <label>Quiet Hours</label>
+            <label style="font-weight:500; margin:0;">
+              <input type="checkbox" name="quiet_hours_enabled" value="1" {% if cfg.quiet_hours_enabled %}checked{% endif %}>
+              Enable Quiet Hours (mute audio; lights still run)
+            </label>
+
+            <div class="row" style="margin-top:10px;">
+              <div>
+                <label style="font-weight:650; margin:0;">Start</label>
+                <input type="time" name="quiet_hours_start" value="{{ cfg.quiet_hours_start }}">
+              </div>
+              <div>
+                <label style="font-weight:650; margin:0;">End</label>
+                <input type="time" name="quiet_hours_end" value="{{ cfg.quiet_hours_end }}">
+              </div>
+            </div>
+
+            <div class="muted small" style="margin-top:8px;">
+              Overnight windows are supported (e.g., 22:00 → 07:00).
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <button type="submit">Save Config</button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+
+</body>
+</html>
