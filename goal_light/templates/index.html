@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- UI Version: 1.9.11 -->
+<!-- UI Version: 1.9.12 -->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -270,11 +270,16 @@
       const abbr = (data && data.team2_effective_abbr) ? ("" + data.team2_effective_abbr).toUpperCase() : "OPP";
       const img = document.getElementById("team2_logo_img");
       const badge = document.getElementById("team2_badge");
+      const label = document.getElementById("team2_label");
       if (!img || !badge) return;
 
       // Always show the actual opponent abbrev in the badge (e.g., LAK)
       badge.textContent = abbr || "OPP";
       badge.style.display = "none"; // will be shown if logo fails
+
+      if (label) {
+        label.textContent = `Goal (${abbr || 'OPP'})`;
+      }
 
       img.style.display = "";
       img.setAttribute("alt", abbr || "OPP");
@@ -483,7 +488,7 @@
             <span class="btnline">
               <img id="team1_logo_img" class="logo btn" data-badge-id="team1_badge" alt="{{ cfg.team1 }}">
               <span id="team1_badge" class="badge btn" style="display:none;">{{ cfg.team1 }}</span>
-              <span class="label">GOAL Team 1</span>
+              <span class="label" id="team1_label">Goal ({{ cfg.team1 }})</span>
             </span>
           </button>
         </form>
@@ -495,7 +500,7 @@
               <span id="team2_badge" class="badge btn" style="display:none;">
                 {% if cfg.team2 == "NONE" %}OPP{% else %}{{ cfg.team2 }}{% endif %}
               </span>
-              <span class="label">GOAL Team 2</span>
+              <span class="label" id="team2_label">Goal ({% if cfg.team2 == "NONE" %}OPP{% else %}{{ cfg.team2 }}{% endif %})</span>
             </span>
           </button>
         </form>
@@ -593,6 +598,16 @@
               {% endfor %}
             </select>
 
+            {% set t1a = (cfg.team1_anthem or '')|lower %}
+            <label>Team 1 Anthem</label>
+            <select name="team1_anthem">
+              <option value="None (no lights, no sound)" {% if 'no lights' in t1a %}selected{% endif %}>None (no lights, no sound)</option>
+              <option value="None (lights only)" {% if t1a.startswith('none') and ('no lights' not in t1a) %}selected{% endif %}>None (lights only)</option>
+              {% for f in sound_files %}
+                <option value="{{ f }}" {% if cfg.team1_anthem == f %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+
             <label>Team 1 Volume: <span class="muted" id="team1_volume_out">{{ cfg.team1_volume }}%</span></label>
             <input id="team1_volume" type="range" name="team1_volume" min="0" max="100" value="{{ cfg.team1_volume }}">
           </div>
@@ -613,6 +628,16 @@
               <option value="None (lights only)" {% if t2s.startswith('none') and ('no lights' not in t2s) %}selected{% endif %}>None (lights only)</option>
               {% for f in sound_files %}
                 <option value="{{ f }}" {% if cfg.team2_sound == f %}selected{% endif %}>{{ f }}</option>
+              {% endfor %}
+            </select>
+
+            {% set t2a = (cfg.team2_anthem or '')|lower %}
+            <label>Team 2 Anthem</label>
+            <select name="team2_anthem">
+              <option value="None (no lights, no sound)" {% if 'no lights' in t2a %}selected{% endif %}>None (no lights, no sound)</option>
+              <option value="None (lights only)" {% if t2a.startswith('none') and ('no lights' not in t2a) %}selected{% endif %}>None (lights only)</option>
+              {% for f in sound_files %}
+                <option value="{{ f }}" {% if cfg.team2_anthem == f %}selected{% endif %}>{{ f }}</option>
               {% endfor %}
             </select>
 

@@ -6,6 +6,15 @@ Version: 1.9.13 (2025-12-14)
 Delta from 1.9.12:
 - Manual triggers now pre-empt any running show (stop audio + lights) so a new
   press fires immediately
+Version: 1.9.12 (2025-12-13)
+
+Delta from 1.9.11:
+- Anthem selectors and pre-game anthem playback
+- Manual goal buttons show team names
+Version: 1.9.12 (2025-12-14)
+
+Delta from 1.9.11:
+- Limit web lockout to auto triggers only so manual presses remain responsive
 """
 
 import os
@@ -124,6 +133,10 @@ last_scores_by_game = {}  # gid -> {"home": int, "away": int}
 gamecenter_cache_lock = threading.Lock()
 gamecenter_cache = {}
 
+# Anthem tracking (to avoid repeat pre-game plays)
+anthem_lock = threading.Lock()
+anthems_played = set()
+
 # ---------------- pygame init ----------------
 pygame.mixer.pre_init(44100, -16, 2, 1024)
 pygame.init()
@@ -220,6 +233,9 @@ DEFAULT_CONFIG = {
     "team1_sound": "None (lights only)",
     "team2_sound": "None (lights only)",
 
+    "team1_anthem": "None (lights only)",
+    "team2_anthem": "None (lights only)",
+
     "team1_volume": 90,
     "team2_volume": 70,
 
@@ -249,6 +265,9 @@ def _normalize_loaded_config(cfg: dict) -> dict:
 
     out["team1_volume"] = safe_int(out.get("team1_volume"), DEFAULT_CONFIG["team1_volume"])
     out["team2_volume"] = safe_int(out.get("team2_volume"), DEFAULT_CONFIG["team2_volume"])
+
+    out["team1_anthem"] = out.get("team1_anthem") or DEFAULT_CONFIG["team1_anthem"]
+    out["team2_anthem"] = out.get("team2_anthem") or DEFAULT_CONFIG["team2_anthem"]
 
     out["poll_interval_seconds"] = safe_float(out.get("poll_interval_seconds"), DEFAULT_CONFIG["poll_interval_seconds"])
     out["stream_delay"] = safe_float(out.get("stream_delay"), DEFAULT_CONFIG["stream_delay"])
@@ -614,6 +633,74 @@ def _maybe_trigger_auto_goals(cfg: dict, tracked_games: list):
             log(f"[NHL] Auto-goal: {goals_t2} for Team2/OPP({label}) gid={gid}")
             _delayed_fire(2, goals_t2)
 
+# ---------------- Anthems ----------------
+
+def _maybe_trigger_anthems(cfg: dict, tracked_games: list):
+    tz = timezone.utc
+    now_utc = datetime.now(tz)
+
+    team1 = (cfg.get("team1") or "VAN").upper()
+    team2 = (cfg.get("team2") or "NONE").upper()
+
+    anthem1 = cfg.get("team1_anthem") or ""
+    anthem2 = cfg.get("team2_anthem") or ""
+
+    can_play1 = sound_mode(anthem1) == "AUDIO"
+    can_play2 = sound_mode(anthem2) == "AUDIO"
+
+    quiet = quiet_active(cfg)
+
+    for rec in tracked_games:
+        gid = safe_int(rec.get("id"), 0)
+        if gid <= 0:
+            continue
+
+        state = (rec.get("game_state") or "").upper()
+        if state != "PRE":
+            continue
+
+        start_raw = rec.get("start_utc") or ""
+        try:
+            start_dt = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+        except Exception:
+            continue
+
+        time_to_start = start_dt - now_utc
+        if time_to_start < timedelta(0) or time_to_start > timedelta(minutes=5):
+            continue
+
+        home = (rec.get("home") or "").upper()
+        away = (rec.get("away") or "").upper()
+
+        t1_in_game = team1 in (home, away)
+        t2_in_game = (team2 != "NONE" and team2 in (home, away))
+
+        # If both tracked teams share the same game, favor Team 1 only.
+        if t1_in_game and t2_in_game:
+            t2_in_game = False
+
+        to_play = []
+        if can_play1 and t1_in_game:
+            to_play.append((1, anthem1, float(cfg.get("team1_volume", 90)) / 100.0))
+        if can_play2 and t2_in_game:
+            to_play.append((2, anthem2, float(cfg.get("team2_volume", 70)) / 100.0))
+
+        for team_idx, filename, volume in to_play:
+            key = (gid, team_idx)
+            with anthem_lock:
+                if key in anthems_played:
+                    continue
+                anthems_played.add(key)
+
+            def _play():
+                if quiet:
+                    log(f"[ANTHEM] Skipping T{team_idx} gid={gid} (quiet hours active)")
+                    return
+                dur = play_sound(filename, volume)
+                log(f"[ANTHEM] Played anthem for T{team_idx} gid={gid} ({filename}) len={dur:.1f}s")
+
+            threading.Thread(target=_play, daemon=True).start()
+
 # ---------------- Scoreboard poller ----------------
 
 def scoreboard_poller():
@@ -634,6 +721,11 @@ def scoreboard_poller():
         team2 = (cfg.get("team2") or "NONE").upper()
 
         tracked = parse_games_for_teams(sb, team1, team2)
+
+        try:
+            _maybe_trigger_anthems(cfg, tracked)
+        except Exception as e:
+            log(f"[NHL] Anthem scheduling error: {e}")
 
         try:
             _maybe_trigger_auto_goals(cfg, tracked)
