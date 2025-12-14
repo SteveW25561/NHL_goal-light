@@ -211,7 +211,7 @@ def compute_light_schedule(audio_duration: float) -> list[float]:
     return press_times
 
 
-def run_light_show_for_audio_duration(audio_duration: float, log_prefix: str) -> None:
+def run_light_show_for_audio_duration(audio_duration: float, log_prefix: str, stop_event=None) -> None:
     """
     Press the Bud Light button repeatedly so that the LEDs stay on for the
     entire audio_duration and end ≈ END_MARGIN seconds after.
@@ -228,6 +228,8 @@ def run_light_show_for_audio_duration(audio_duration: float, log_prefix: str) ->
     total_presses = len(schedule)
 
     while press_index < total_presses:
+        if stop_event is not None and stop_event.is_set():
+            return
         now = time.time()
         elapsed = now - start
         next_press_at = schedule[press_index]
