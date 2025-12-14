@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.11 (2025-12-13)
+Version: 1.9.13 (2025-12-14)
 
-Delta from 1.9.10:
-- Opponent Mode: manual Team 2 button dynamically shows actual opponent abbrev+logo (from best PRE/LIVE game)
-- /status now returns team2_effective_abbr for UI
-- Keep conservative schedule updates and gamecenter caching
+Delta from 1.9.12:
+- Manual triggers now pre-empt any running show (stop audio + lights) so a new
+  press fires immediately
 """
 
 import os
+import re
 import json
 import time
 import threading
@@ -43,8 +43,31 @@ except Exception:
 
 # ---------------- Constants ----------------
 
-APP_VERSION = "1.9.11"
-UI_VERSION = "1.9.11"
+def detect_ui_version() -> str:
+    """Best-effort detection of UI version from the bundled index.html."""
+
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return "unknown"
+
+    patterns = [
+        r"const UI_VERSION\s*=\s*\"([^\"]+)\"",  # JS constant
+        r"UI Version:\s*([0-9][0-9A-Za-z\.-]*)",     # HTML comment marker
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            return m.group(1)
+
+    return "unknown"
+
+
+APP_VERSION = "1.9.13"
+UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
@@ -57,7 +80,7 @@ NHL_SCOREBOARD_URL = "https://api-web.nhle.com/v1/scoreboard/now"
 NHL_SCHEDULE_URL = "https://api-web.nhle.com/v1/schedule/{date}"
 NHL_GAMECENTER_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
 
-# Show lockout (lockout applies to web/auto; button bypass)
+# Auto-goal lockout (prevents rapid auto-trigger spam; button + manual web bypass)
 WEB_AUTO_LOCKOUT = 8.0
 
 # Pi-only helper button (polled)
@@ -80,7 +103,8 @@ current_config = {}
 
 show_lock = threading.Lock()
 show_active = False
-last_web_show = 0.0
+last_auto_show = 0.0
+show_stop_event = threading.Event()
 
 # Active tracked games (PRE + LIVE candidates)
 active_games = []
@@ -323,20 +347,44 @@ def play_sound(filename: str, volume: float) -> float:
 # ---------------- Light show ----------------
 
 def trigger_show(team: int, source: str):
-    global show_active, last_web_show
+    global show_active, last_auto_show
 
     now = time.time()
     is_button = str(source).startswith("BUTTON")
+    is_auto = str(source).startswith("AUTO")
+    is_manual = not is_auto
+
+    if is_manual:
+        # If a manual trigger arrives during an active show, request a stop and wait
+        # briefly so the new show can start promptly instead of being ignored.
+        with show_lock:
+            if show_active:
+                show_stop_event.set()
+                try:
+                    pygame.mixer.stop()
+                except Exception:
+                    pass
+
+        waited = 0.0
+        while True:
+            with show_lock:
+                if not show_active:
+                    break
+            time.sleep(0.05)
+            waited += 0.05
+            if waited >= 2.0:
+                break
 
     with show_lock:
         if show_active:
             return
-        if not is_button and now - last_web_show < WEB_AUTO_LOCKOUT:
+        if is_auto and now - last_auto_show < WEB_AUTO_LOCKOUT:
             return
         show_active = True
+        show_stop_event.clear()
 
     def run():
-        global show_active, last_web_show
+        global show_active, last_auto_show
         try:
             with config_lock:
                 cfg = current_config.copy()
@@ -362,13 +410,14 @@ def trigger_show(team: int, source: str):
             if dur <= 0:
                 dur = FALLBACK_DUR
 
-            run_light_show_for_audio_duration(dur, f"[LIGHT T{team}]")
-            time.sleep(dur)
+            run_light_show_for_audio_duration(dur, f"[LIGHT T{team}]", stop_event=show_stop_event)
+            show_stop_event.wait(timeout=dur)
         finally:
             with show_lock:
                 show_active = False
-                if not is_button:
-                    last_web_show = time.time()
+                if is_auto:
+                    last_auto_show = time.time()
+                show_stop_event.clear()
 
     threading.Thread(target=run, daemon=True).start()
 
