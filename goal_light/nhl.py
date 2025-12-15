@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.15 (2025-12-14)
-fixed stale games
+Version: 1.9.16 (2025-12-14 23:05 PST)
+- Restore dynamic version detection for backend and UI
 
 Delta from 1.9.13:
 - Restore lockout behavior so active shows aren't pre-empted by manual presses
@@ -59,6 +59,33 @@ except Exception:
 
 # ---------------- Constants ----------------
 
+def _find_pattern_first(text: str, patterns) -> str:
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            candidate = m.group(1)
+            if "{" in candidate or "}" in candidate:
+                continue  # Ignore templating placeholders
+            return candidate
+    return ""
+
+
+def detect_app_version() -> str:
+    """Best-effort detection of backend version from this file's header."""
+
+    try:
+        with open(__file__, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return "unknown"
+
+    patterns = [
+        r"Version:\s*([0-9][0-9A-Za-z\.-]*)",  # docstring header marker
+    ]
+
+    return _find_pattern_first(text, patterns) or "unknown"
+
+
 def detect_ui_version() -> str:
     """Best-effort detection of UI version from the bundled index.html."""
 
@@ -70,19 +97,14 @@ def detect_ui_version() -> str:
         return "unknown"
 
     patterns = [
-        r"const UI_VERSION\s*=\s*\"([^\"]+)\"",  # JS constant
         r"UI Version:\s*([0-9][0-9A-Za-z\.-]*)",     # HTML comment marker
+        r"const UI_VERSION\s*=\s*\"([^\"]+)\"",  # JS constant
     ]
 
-    for pat in patterns:
-        m = re.search(pat, text)
-        if m:
-            return m.group(1)
-
-    return "unknown"
+    return _find_pattern_first(text, patterns) or "unknown"
 
 
-APP_VERSION = "1.9.14"
+APP_VERSION = detect_app_version()
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
