@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.14 (2025-12-14)
+Version: 1.9.16 (2025-12-14)
+fixed stale games
 
 Delta from 1.9.13:
 - Restore lockout behavior so active shows aren't pre-empted by manual presses
