@@ -43,7 +43,13 @@ import requests
 import pygame
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 
-from light import init_gpio, cleanup_gpio, set_button_enabled, run_light_show_for_audio_duration
+from light import (
+    cleanup_gpio,
+    init_gpio,
+    press_goal_button_once,
+    run_light_show_for_audio_duration,
+    set_button_enabled,
+)
 
 try:
     from zoneinfo import ZoneInfo
@@ -134,6 +140,9 @@ gamecenter_cache = {}
 # Anthem tracking (to avoid repeat pre-game plays)
 anthem_lock = threading.Lock()
 anthems_played = set()
+
+# Startup self-check (only once per process lifetime)
+_startup_self_check_done = False
 
 # ---------------- pygame init ----------------
 pygame.mixer.pre_init(44100, -16, 2, 1024)
@@ -360,6 +369,27 @@ def play_sound(filename: str, volume: float) -> float:
         return float(snd.get_length() or 0.0)
     except Exception:
         return 0.0
+
+
+def run_startup_self_check() -> None:
+    """One-time self-check: play OK tone and flash LEDs once."""
+    global _startup_self_check_done
+
+    if _startup_self_check_done:
+        return
+
+    _startup_self_check_done = True
+    log("[MAIN] Running startup self-check (OK tone + single LED flash).")
+
+    try:
+        play_sound("OK_tone.mp3", 1.0)
+    except Exception as e:
+        log(f"[MAIN] Startup self-check sound failed: {e}")
+
+    try:
+        press_goal_button_once()
+    except Exception as e:
+        log(f"[MAIN] Startup self-check LED press failed: {e}")
 
 # ---------------- Light show ----------------
 
@@ -1117,6 +1147,8 @@ def main():
 
     init_gpio(False)
     set_button_enabled(False)
+
+    run_startup_self_check()
 
     if boolv(current_config.get("physical_button_enabled")):
         threading.Thread(target=button_poller, daemon=True).start()
