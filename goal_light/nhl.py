@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.14 (2025-12-14)
-
+Version: 1.9.15 (2025-12-14)
+Added game buzzers
 Delta from 1.9.13:
 - Restore lockout behavior so active shows aren't pre-empted by manual presses
   and drop the stop_event dependency for the light show helper.
@@ -81,7 +81,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.14"
+APP_VERSION = "1.9.15"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -136,6 +136,10 @@ last_scores_by_game = {}  # gid -> {"home": int, "away": int}
 # gamecenter cache: gid -> {"ts": float, "period_label": str, "clock": str}
 gamecenter_cache_lock = threading.Lock()
 gamecenter_cache = {}
+
+# Game state tracking (period/final events)
+game_event_lock = threading.Lock()
+last_game_events = {}
 
 # Anthem tracking (to avoid repeat pre-game plays)
 anthem_lock = threading.Lock()
@@ -243,6 +247,11 @@ DEFAULT_CONFIG = {
     "team1_anthem": "None (lights only)",
     "team2_anthem": "None (lights only)",
 
+    "team1_end_period_buzzer": True,
+    "team1_end_game_buzzer": True,
+    "team2_end_period_buzzer": True,
+    "team2_end_game_buzzer": True,
+
     "team1_volume": 90,
     "team2_volume": 70,
 
@@ -276,6 +285,11 @@ def _normalize_loaded_config(cfg: dict) -> dict:
     out["team1_anthem"] = out.get("team1_anthem") or DEFAULT_CONFIG["team1_anthem"]
     out["team2_anthem"] = out.get("team2_anthem") or DEFAULT_CONFIG["team2_anthem"]
 
+    out["team1_end_period_buzzer"] = boolv(out.get("team1_end_period_buzzer"))
+    out["team1_end_game_buzzer"] = boolv(out.get("team1_end_game_buzzer"))
+    out["team2_end_period_buzzer"] = boolv(out.get("team2_end_period_buzzer"))
+    out["team2_end_game_buzzer"] = boolv(out.get("team2_end_game_buzzer"))
+
     out["poll_interval_seconds"] = safe_float(out.get("poll_interval_seconds"), DEFAULT_CONFIG["poll_interval_seconds"])
     out["stream_delay"] = safe_float(out.get("stream_delay"), DEFAULT_CONFIG["stream_delay"])
 
@@ -305,6 +319,11 @@ def save_config(cfg: dict):
     data["auto_goals_enabled"] = boolv(data.get("auto_goals_enabled"))
     data["physical_button_enabled"] = boolv(data.get("physical_button_enabled"))
     data["quiet_hours_enabled"] = boolv(data.get("quiet_hours_enabled"))
+
+    data["team1_end_period_buzzer"] = boolv(data.get("team1_end_period_buzzer"))
+    data["team1_end_game_buzzer"] = boolv(data.get("team1_end_game_buzzer"))
+    data["team2_end_period_buzzer"] = boolv(data.get("team2_end_period_buzzer"))
+    data["team2_end_game_buzzer"] = boolv(data.get("team2_end_game_buzzer"))
 
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -443,6 +462,45 @@ def trigger_show(team: int, source: str):
 
     threading.Thread(target=run, daemon=True).start()
 
+
+def trigger_buzzer(team: int, reason: str, cfg: dict):
+    global show_active
+
+    filename = "buzzer.mp3"
+    volume_pct = safe_int(cfg.get("team1_volume") if team == 1 else cfg.get("team2_volume"), 90 if team == 1 else 70)
+    volume = max(0.0, min(1.0, float(volume_pct) / 100.0))
+
+    quiet = quiet_active(cfg)
+    selected_mode = sound_mode(filename)
+
+    def run():
+        nonlocal quiet, selected_mode
+        with show_lock:
+            if show_active:
+                log(f"[BUZZER] Show already active; skipping T{team} ({reason}).")
+                return
+            show_active = True
+
+        try:
+            log(f"[BUZZER] Triggered for T{team} ({reason}).")
+
+            dur = 0.0
+            if quiet and selected_mode == "AUDIO":
+                log(f"[BUZZER] Quiet hours active; skipping audio for T{team}.")
+            else:
+                dur = play_sound(filename, volume)
+
+            if dur <= 0:
+                dur = FALLBACK_DUR
+
+            run_light_show_for_audio_duration(dur, f"[BUZZER T{team}]")
+            time.sleep(dur)
+        finally:
+            with show_lock:
+                show_active = False
+
+    threading.Thread(target=run, daemon=True).start()
+
 # ---------------- NHL fetch helpers ----------------
 
 def fetch_json(url: str) -> dict:
@@ -462,6 +520,24 @@ def _collect_games(container, out_list):
     elif isinstance(container, list):
         for item in container:
             _collect_games(item, out_list)
+
+
+def _is_final_state(game_state: str, coded_state) -> bool:
+    gs = (game_state or "").upper()
+    code = str(coded_state or "").strip()
+
+    if gs in {"FINAL", "COMPLETED", "COMPLETE", "OFF", "GAMEOVER", "GAME OVER"}:
+        return True
+
+    try:
+        code_int = int(code)
+        if code_int in (5, 6, 7):
+            return True
+    except Exception:
+        pass
+
+    return code in {"5", "6", "7", "FINAL"}
+
 
 def parse_games_for_teams(scoreboard: dict, team1: str, team2: str):
     tracked = []
@@ -491,7 +567,9 @@ def parse_games_for_teams(scoreboard: dict, team1: str, team2: str):
                 continue
 
             start_utc = g.get("startTimeUTC") or ""
-            game_state = (g.get("gameState") or g.get("gameStateCode") or "OFF").upper()
+            status_obj = g.get("gameStatus") or g.get("status") or {}
+            coded_state = status_obj.get("codedGameState") or status_obj.get("statusCode") or g.get("codedGameState") or g.get("gameStateCode")
+            game_state = (g.get("gameState") or g.get("gameStateCode") or status_obj.get("detailedState") or status_obj.get("abstractGameState") or "OFF").upper()
 
             home_score = safe_int((g.get("homeTeam") or {}).get("score", 0), 0)
             away_score = safe_int((g.get("awayTeam") or {}).get("score", 0), 0)
@@ -514,6 +592,8 @@ def parse_games_for_teams(scoreboard: dict, team1: str, team2: str):
             "game_state": game_state,
             "home_score": home_score,
             "away_score": away_score,
+            "coded_state": coded_state,
+            "is_final": _is_final_state(game_state, coded_state),
         })
 
     return tracked
@@ -679,6 +759,74 @@ def _maybe_trigger_auto_goals(cfg: dict, tracked_games: list):
             log(f"[NHL] Auto-goal: {goals_t2} for Team2/OPP({label}) gid={gid}")
             _delayed_fire(2, goals_t2)
 
+
+def _maybe_trigger_period_and_final_buzzers(cfg: dict, tracked_games: list):
+    team1 = (cfg.get("team1") or "VAN").upper()
+    team2 = (cfg.get("team2") or "NONE").upper()
+
+    t1_period = boolv(cfg.get("team1_end_period_buzzer"))
+    t1_final = boolv(cfg.get("team1_end_game_buzzer"))
+    t2_period = boolv(cfg.get("team2_end_period_buzzer"))
+    t2_final = boolv(cfg.get("team2_end_game_buzzer"))
+
+    if not any((t1_period, t1_final, t2_period, t2_final)):
+        return
+
+    for rec in tracked_games:
+        gid = safe_int(rec.get("id"), 0)
+        if gid <= 0:
+            continue
+
+        state = (rec.get("game_state") or rec.get("state") or "OFF").upper()
+        coded_state = rec.get("coded_state")
+        is_final = bool(rec.get("is_final")) or _is_final_state(state, coded_state)
+        period_label = (rec.get("period_label") or "").upper()
+
+        home = (rec.get("home") or "").upper()
+        away = (rec.get("away") or "").upper()
+
+        with game_event_lock:
+            prev = last_game_events.get(gid) or {}
+            prev_period = (prev.get("period") or "").upper()
+            prev_final = bool(prev.get("is_final")) or _is_final_state(prev.get("state"), prev.get("coded_state"))
+
+            last_game_events[gid] = {
+                "state": state,
+                "period": period_label,
+                "is_final": is_final,
+                "coded_state": coded_state,
+            }
+
+        period_transition = (period_label == "INT" and prev_period != "INT")
+        final_transition = (is_final and not prev_final)
+
+        if not period_transition and not final_transition:
+            continue
+
+        t1_in_game = team1 in (home, away)
+        if team2 == "NONE":
+            t2_in_game = t1_in_game
+        else:
+            t2_in_game = team2 in (home, away)
+
+        if t1_in_game and t2_in_game and team2 != "NONE":
+            # Avoid double triggers when both tracked teams share the same game.
+            t2_in_game = False
+
+        matchup_label = f"{away} @ {home}" if home and away else str(gid)
+
+        if period_transition:
+            if t1_in_game and t1_period:
+                trigger_buzzer(1, f"Period end gid={gid} {matchup_label}", cfg)
+            if t2_in_game and t2_period:
+                trigger_buzzer(2, f"Period end gid={gid} {matchup_label}", cfg)
+
+        if final_transition:
+            if t1_in_game and t1_final:
+                trigger_buzzer(1, f"Final state gid={gid} {matchup_label}", cfg)
+            if t2_in_game and t2_final:
+                trigger_buzzer(2, f"Final state gid={gid} {matchup_label}", cfg)
+
 # ---------------- Anthems ----------------
 
 def _maybe_trigger_anthems(cfg: dict, tracked_games: list):
@@ -753,7 +901,8 @@ def scoreboard_poller():
     global active_games, last_score_update
 
     LIVE_STATES = {"LIVE", "CRIT", "OT", "SO", "SHOOTOUT"}
-    CANDIDATE_STATES = {"PRE"} | LIVE_STATES
+    FINAL_STATES = {"FINAL", "COMPLETED", "COMPLETE", "OFF", "GAMEOVER", "GAME OVER"}
+    CANDIDATE_STATES = {"PRE"} | LIVE_STATES | FINAL_STATES
 
     while not stop_event.is_set():
         with config_lock:
@@ -783,7 +932,9 @@ def scoreboard_poller():
 
         for rec in tracked:
             state = (rec.get("game_state") or "OFF").upper()
-            if state not in CANDIDATE_STATES:
+            is_final = bool(rec.get("is_final")) or _is_final_state(state, rec.get("coded_state"))
+
+            if state not in CANDIDATE_STATES and not is_final:
                 continue
 
             gid = safe_int(rec.get("id"), 0)
@@ -801,8 +952,14 @@ def scoreboard_poller():
             out["is_pre"] = is_pre
             out["period_label"] = period_label
             out["clock"] = clock
+            out["is_final"] = is_final
 
             candidates.append(out)
+
+        try:
+            _maybe_trigger_period_and_final_buzzers(cfg, candidates)
+        except Exception as e:
+            log(f"[NHL] Period/final detection error: {e}")
 
         def _sort_key(g):
             state = (g.get("game_state") or "").upper()
@@ -1101,6 +1258,10 @@ def config():
         current_config["auto_goals_enabled"] = ("auto_goals_enabled" in request.form)
         current_config["physical_button_enabled"] = ("physical_button_enabled" in request.form)
         current_config["quiet_hours_enabled"] = ("quiet_hours_enabled" in request.form)
+        current_config["team1_end_period_buzzer"] = ("team1_end_period_buzzer" in request.form)
+        current_config["team1_end_game_buzzer"] = ("team1_end_game_buzzer" in request.form)
+        current_config["team2_end_period_buzzer"] = ("team2_end_period_buzzer" in request.form)
+        current_config["team2_end_game_buzzer"] = ("team2_end_game_buzzer" in request.form)
 
         current_config["team1"] = (current_config.get("team1") or "VAN").upper()
         current_config["team2"] = (current_config.get("team2") or "NONE").upper()
