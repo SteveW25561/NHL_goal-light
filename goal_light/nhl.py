@@ -518,6 +518,42 @@ def parse_games_for_teams(scoreboard: dict, team1: str, team2: str):
 
     return tracked
 
+
+def _prune_stale_games(games: list, max_age_hours: float = 24.0):
+    """Remove obviously stale games so the status bar doesn't get stuck.
+
+    When the scoreboard poller crashes (or the NHL feed misbehaves), the UI can
+    end up stuck with games that already finished hours ago. We prune any game
+    that is neither live nor pre-game and whose scheduled start time is more
+    than ``max_age_hours`` in the past.
+    """
+
+    now_ts = time.time()
+    max_age_seconds = max_age_hours * 3600.0
+    fresh = []
+
+    for g in games or []:
+        try:
+            is_live = bool(g.get("is_live"))
+            is_pre = bool(g.get("is_pre"))
+            if is_live or is_pre:
+                fresh.append(g)
+                continue
+
+            st_raw = (g.get("start_utc") or "").strip()
+            if not st_raw:
+                fresh.append(g)
+                continue
+
+            dt = datetime.fromisoformat(st_raw.replace("Z", "+00:00"))
+            age = now_ts - dt.timestamp()
+            if age <= max_age_seconds:
+                fresh.append(g)
+        except Exception:
+            fresh.append(g)
+
+    return fresh
+
 def fetch_period_and_clock_uncached(game_id: int):
     data = fetch_json(NHL_GAMECENTER_URL.format(game_id=game_id))
     if not data:
@@ -756,71 +792,80 @@ def scoreboard_poller():
     CANDIDATE_STATES = {"PRE"} | LIVE_STATES
 
     while not stop_event.is_set():
-        with config_lock:
-            cfg = current_config.copy()
-
-        sb = fetch_json(NHL_SCOREBOARD_URL)
-        if sb:
-            last_score_update = time.time()
-
-        team1 = (cfg.get("team1") or "VAN").upper()
-        team2 = (cfg.get("team2") or "NONE").upper()
-
-        tracked = parse_games_for_teams(sb, team1, team2)
-
         try:
-            _maybe_trigger_anthems(cfg, tracked)
-        except Exception as e:
-            log(f"[NHL] Anthem scheduling error: {e}")
+            with config_lock:
+                cfg = current_config.copy()
 
-        try:
-            _maybe_trigger_auto_goals(cfg, tracked)
-        except Exception as e:
-            log(f"[NHL] Auto-goal detection error: {e}")
+            sb = fetch_json(NHL_SCOREBOARD_URL)
+            if sb:
+                last_score_update = time.time()
 
-        candidates = []
-        any_live = False
+            team1 = (cfg.get("team1") or "VAN").upper()
+            team2 = (cfg.get("team2") or "NONE").upper()
 
-        for rec in tracked:
-            state = (rec.get("game_state") or "OFF").upper()
-            if state not in CANDIDATE_STATES:
-                continue
+            tracked = parse_games_for_teams(sb, team1, team2)
 
-            gid = safe_int(rec.get("id"), 0)
-            is_live = state in LIVE_STATES
-            is_pre = state == "PRE"
-
-            period_label = ""
-            clock = ""
-            if is_live and gid:
-                period_label, clock = fetch_period_and_clock_cached(gid)
-                any_live = True
-
-            out = dict(rec)
-            out["is_live"] = is_live
-            out["is_pre"] = is_pre
-            out["period_label"] = period_label
-            out["clock"] = clock
-
-            candidates.append(out)
-
-        def _sort_key(g):
-            state = (g.get("game_state") or "").upper()
-            live_rank = 0 if state in LIVE_STATES else 1
             try:
-                st = g.get("start_utc") or ""
-                dt = datetime.fromisoformat(st.replace("Z", "+00:00"))
-                return (live_rank, dt)
-            except Exception:
-                return (live_rank, datetime.max)
+                _maybe_trigger_anthems(cfg, tracked)
+            except Exception as e:
+                log(f"[NHL] Anthem scheduling error: {e}")
 
-        candidates.sort(key=_sort_key)
+            try:
+                _maybe_trigger_auto_goals(cfg, tracked)
+            except Exception as e:
+                log(f"[NHL] Auto-goal detection error: {e}")
 
-        with active_games_lock:
-            active_games = candidates
+            candidates = []
+            any_live = False
 
-        live_interval = safe_float(cfg.get("poll_interval_seconds"), 5.0)
-        sleep_s = live_interval if any_live else 60.0
+            for rec in tracked:
+                state = (rec.get("game_state") or "OFF").upper()
+                if state not in CANDIDATE_STATES:
+                    continue
+
+                gid = safe_int(rec.get("id"), 0)
+                is_live = state in LIVE_STATES
+                is_pre = state == "PRE"
+
+                period_label = ""
+                clock = ""
+                if is_live and gid:
+                    period_label, clock = fetch_period_and_clock_cached(gid)
+                    any_live = True
+
+                out = dict(rec)
+                out["is_live"] = is_live
+                out["is_pre"] = is_pre
+                out["period_label"] = period_label
+                out["clock"] = clock
+
+                candidates.append(out)
+
+            candidates = _prune_stale_games(candidates)
+
+            def _sort_key(g):
+                state = (g.get("game_state") or "").upper()
+                live_rank = 0 if state in LIVE_STATES else 1
+                try:
+                    st = g.get("start_utc") or ""
+                    dt = datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    return (live_rank, dt)
+                except Exception:
+                    return (live_rank, datetime.max)
+
+            candidates.sort(key=_sort_key)
+
+            with active_games_lock:
+                active_games = candidates
+
+            live_interval = safe_float(cfg.get("poll_interval_seconds"), 5.0)
+            sleep_s = live_interval if any_live else 60.0
+
+        except Exception as e:
+            log(f"[NHL] Scoreboard poller error: {e}")
+            with active_games_lock:
+                active_games = _prune_stale_games(active_games)
+            sleep_s = 10.0
 
         end = time.time() + max(5.0, sleep_s)
         while time.time() < end and not stop_event.is_set():
@@ -1134,6 +1179,8 @@ def status():
 
     with active_games_lock:
         ag = list(active_games)
+
+    ag = _prune_stale_games(ag)
 
     banners, asof_local, now_loc = build_banners(cfg, ag)
 
