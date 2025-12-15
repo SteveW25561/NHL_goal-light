@@ -564,6 +564,49 @@ def fetch_period_and_clock_cached(game_id: int):
 
     return pl, ck
 
+
+def parse_clock_to_seconds(clock: str):
+    s = (clock or "").strip()
+    if not s:
+        return None
+
+    # Accept MM or MM:SS (or M:SS)
+    m = re.match(r"^(\d{1,2})(?::(\d{2}))?$", s)
+    if not m:
+        return None
+
+    minutes = int(m.group(1))
+    seconds = int(m.group(2) or 0)
+    if seconds >= 60:
+        return None
+    return minutes * 60 + seconds
+
+
+def compute_stream_lag_seconds(observed_clock: str, live_clock: str, cap_seconds: float = 60.0):
+    """Return (lag_seconds, was_capped) based on the difference between the user's observed
+    stream clock and the current live clock. If parsing fails, returns (None, False).
+    """
+
+    obs = parse_clock_to_seconds(observed_clock)
+    live = parse_clock_to_seconds(live_clock)
+    if obs is None or live is None:
+        return None, False
+
+    diff = max(0.0, obs - live)
+    was_capped = diff > cap_seconds
+    return min(diff, cap_seconds), was_capped
+
+
+def _pick_primary_live_game():
+    with active_games_lock:
+        for g in active_games:
+            try:
+                if bool(g.get("is_live")):
+                    return dict(g)
+            except Exception:
+                continue
+    return None
+
 # ---------------- Auto-goal detection ----------------
 
 def _maybe_trigger_auto_goals(cfg: dict, tracked_games: list):
@@ -1116,6 +1159,59 @@ def status():
         "team2": cfg.get("team2"),
         "team2_effective_abbr": team2_effective,
     })
+
+
+@app.route("/api/stream-delay", methods=["POST"])
+def api_stream_delay():
+    payload = request.get_json(force=True, silent=True) or {}
+    observed_clock = (payload.get("observed_clock") or "").strip()
+    if not observed_clock:
+        return jsonify({"ok": False, "error": "Clock value required."}), 400
+
+    game = _pick_primary_live_game()
+    if not game:
+        return jsonify({"ok": False, "error": "No live tracked game available."}), 404
+
+    gid = safe_int(game.get("id"), 0)
+    if gid <= 0:
+        return jsonify({"ok": False, "error": "Missing game identifier."}), 400
+
+    period_label, live_clock = fetch_period_and_clock_uncached(gid)
+    if not live_clock:
+        return jsonify({"ok": False, "error": "Unable to fetch live game clock."}), 503
+
+    lag_seconds, was_capped = compute_stream_lag_seconds(observed_clock, live_clock)
+    if lag_seconds is None:
+        return jsonify({"ok": False, "error": "Invalid clock format. Use MM or MM:SS."}), 400
+
+    return jsonify({
+        "ok": True,
+        "lag_seconds": lag_seconds,
+        "was_capped": was_capped,
+        "period": period_label or game.get("period_label") or "",
+        "live_clock": live_clock,
+        "game_id": gid,
+    })
+
+
+@app.route("/api/apply-delay", methods=["POST"])
+def api_apply_delay():
+    payload = request.get_json(force=True, silent=True) or {}
+    raw_lag = payload.get("lag_seconds")
+    if raw_lag is None:
+        return jsonify({"ok": False, "error": "lag_seconds is required."}), 400
+
+    lag = safe_float(raw_lag, None)
+    if lag is None:
+        return jsonify({"ok": False, "error": "lag_seconds must be numeric."}), 400
+
+    lag = max(0.0, min(60.0, lag))
+
+    with config_lock:
+        current_config["stream_delay"] = lag
+        save_config(current_config)
+
+    return jsonify({"ok": True, "stream_delay": lag})
 
 # ---------------- Shutdown handling ----------------
 
