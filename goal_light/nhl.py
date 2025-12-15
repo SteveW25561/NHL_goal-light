@@ -2,6 +2,9 @@
 """
 nhl.py – NHL Goal Light controller + Web UI
 Version: 1.9.17 (2025-12-14)
+- add shutdown  in webui
+
+1.9.16
 Add buzzer triggers for period/game end, plus per-team toggles.
 
 Delta from 1.9.13:
