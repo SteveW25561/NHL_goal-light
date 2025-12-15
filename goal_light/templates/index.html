@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- UI Version: 1.9.16 -->
+<!-- UI Version: 1.9.17 -->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -204,7 +204,7 @@
   </style>
 
   <script>
-    const UI_VERSION = "1.9.16";
+    const UI_VERSION = "1.9.17";
 
     function hookRange(idRange, idOut) {
       const r = document.getElementById(idRange);
@@ -452,6 +452,7 @@
       const delayBtn = document.getElementById("delay_calc_btn");
       const applyBtn = document.getElementById("delay_apply_btn");
       const resultEl = document.getElementById("delay_calc_result");
+      const shutdownBtn = document.getElementById("shutdown_btn");
 
       let lastLag = null;
 
@@ -463,6 +464,30 @@
 
       function setApplyEnabled(enabled) {
         if (applyBtn) applyBtn.disabled = !enabled;
+      }
+
+      async function shutdownPi() {
+        if (!shutdownBtn) return;
+        const confirmed = window.confirm("Shut down the Pi now? This will power it off safely.");
+        if (!confirmed) return;
+
+        const originalLabel = shutdownBtn.textContent;
+        shutdownBtn.disabled = true;
+        shutdownBtn.textContent = "Requesting shutdown…";
+
+        try {
+          const res = await fetch("/api/shutdown", { method: "POST" });
+          const data = await res.json();
+          if (!res.ok || !data || data.ok !== true) {
+            const msg = (data && data.error) ? data.error : "Shutdown request failed.";
+            throw new Error(msg);
+          }
+          shutdownBtn.textContent = "Shutdown requested";
+        } catch (e) {
+          alert(e && e.message ? e.message : "Unable to request shutdown.");
+          shutdownBtn.disabled = false;
+          shutdownBtn.textContent = originalLabel;
+        }
       }
 
       async function calculateDelay() {
@@ -543,6 +568,7 @@
         }
       });
       if (applyBtn) applyBtn.addEventListener("click", applyDelay);
+      if (shutdownBtn) shutdownBtn.addEventListener("click", shutdownPi);
     });
   </script>
 </head>
@@ -836,6 +862,18 @@
 
         <div style="margin-top:14px;">
           <button type="submit">Save Config</button>
+        </div>
+
+        <div class="card" style="margin-top:14px; background: var(--warn-bg); border-color: var(--warn-br);">
+          <div class="row" style="gap:12px; align-items:center;">
+            <div style="flex:2;">
+              <div style="font-weight:800;">Shut down Pi</div>
+              <div class="muted small">Safely power off the device before unplugging it.</div>
+            </div>
+            <div style="flex:1;">
+              <button type="button" id="shutdown_btn" style="background:#3b1f1f; border-color:#7a2a33;">Shut down Pi</button>
+            </div>
+          </div>
         </div>
       </form>
     </div>

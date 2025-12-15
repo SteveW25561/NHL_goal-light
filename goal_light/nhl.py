@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.16 (2025-12-14)
+Version: 1.9.17 (2025-12-14)
 Add buzzer triggers for period/game end, plus per-team toggles.
 
 Delta from 1.9.13:
@@ -24,6 +24,7 @@ import json
 import time
 import threading
 import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 # ---- XDG_RUNTIME_DIR fix (for pygame/SDL under systemd) ----
@@ -82,7 +83,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.16"
+APP_VERSION = "1.9.17"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -1404,6 +1405,16 @@ def api_apply_delay():
         save_config(current_config)
 
     return jsonify({"ok": True, "stream_delay": lag})
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def api_shutdown():
+    try:
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Failed to request shutdown: {e}"}), 500
+
+    return jsonify({"ok": True})
 
 # ---------------- Shutdown handling ----------------
 
