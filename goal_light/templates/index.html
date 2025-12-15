@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- UI Version: 1.9.15 -->
+<!-- UI Version: 1.9.16 -->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -204,7 +204,7 @@
   </style>
 
   <script>
-    const UI_VERSION = "1.9.11";
+    const UI_VERSION = "1.9.16";
 
     function hookRange(idRange, idOut) {
       const r = document.getElementById(idRange);
@@ -704,6 +704,16 @@
               {% endfor %}
             </select>
 
+            <div class="muted small" style="margin-top:8px; font-weight:700;">Buzzer on:</div>
+            <label style="font-weight:500; margin:2px 0 0 0;">
+              <input type="checkbox" name="team1_buzzer_period_end" value="1" {% if cfg.team1_buzzer_period_end %}checked{% endif %}>
+              Period end
+            </label>
+            <label style="font-weight:500; margin:2px 0 0 0;">
+              <input type="checkbox" name="team1_buzzer_game_end" value="1" {% if cfg.team1_buzzer_game_end %}checked{% endif %}>
+              End of game
+            </label>
+
             <label>Team 1 Volume: <span class="muted" id="team1_volume_out">{{ cfg.team1_volume }}%</span></label>
             <input id="team1_volume" type="range" name="team1_volume" min="0" max="100" value="{{ cfg.team1_volume }}">
           </div>
@@ -736,6 +746,16 @@
                 <option value="{{ f }}" {% if cfg.team2_anthem == f %}selected{% endif %}>{{ f }}</option>
               {% endfor %}
             </select>
+
+            <div class="muted small" style="margin-top:8px; font-weight:700;">Buzzer on:</div>
+            <label style="font-weight:500; margin:2px 0 0 0;">
+              <input type="checkbox" name="team2_buzzer_period_end" value="1" {% if cfg.team2_buzzer_period_end %}checked{% endif %}>
+              Period end
+            </label>
+            <label style="font-weight:500; margin:2px 0 0 0;">
+              <input type="checkbox" name="team2_buzzer_game_end" value="1" {% if cfg.team2_buzzer_game_end %}checked{% endif %}>
+              End of game
+            </label>
 
             <label>Team 2 Volume: <span class="muted" id="team2_volume_out">{{ cfg.team2_volume }}%</span></label>
             <input id="team2_volume" type="range" name="team2_volume" min="0" max="100" value="{{ cfg.team2_volume }}">
