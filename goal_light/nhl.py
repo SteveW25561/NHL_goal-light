@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.13 (2025-12-14)
+Version: 1.9.14 (2025-12-14)
 
-Delta from 1.9.12:
-- Manual triggers now pre-empt any running show (stop audio + lights) so a new
-  press fires immediately
+Delta from 1.9.13:
+- Restore lockout behavior so active shows aren't pre-empted by manual presses
+  and drop the stop_event dependency for the light show helper.
 Version: 1.9.12 (2025-12-13)
 
 Delta from 1.9.11:
@@ -75,7 +75,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.13"
+APP_VERSION = "1.9.14"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -113,8 +113,6 @@ current_config = {}
 show_lock = threading.Lock()
 show_active = False
 last_auto_show = 0.0
-show_stop_event = threading.Event()
-
 # Active tracked games (PRE + LIVE candidates)
 active_games = []
 active_games_lock = threading.Lock()
@@ -369,30 +367,7 @@ def trigger_show(team: int, source: str):
     global show_active, last_auto_show
 
     now = time.time()
-    is_button = str(source).startswith("BUTTON")
     is_auto = str(source).startswith("AUTO")
-    is_manual = not is_auto
-
-    if is_manual:
-        # If a manual trigger arrives during an active show, request a stop and wait
-        # briefly so the new show can start promptly instead of being ignored.
-        with show_lock:
-            if show_active:
-                show_stop_event.set()
-                try:
-                    pygame.mixer.stop()
-                except Exception:
-                    pass
-
-        waited = 0.0
-        while True:
-            with show_lock:
-                if not show_active:
-                    break
-            time.sleep(0.05)
-            waited += 0.05
-            if waited >= 2.0:
-                break
 
     with show_lock:
         if show_active:
@@ -400,7 +375,6 @@ def trigger_show(team: int, source: str):
         if is_auto and now - last_auto_show < WEB_AUTO_LOCKOUT:
             return
         show_active = True
-        show_stop_event.clear()
 
     def run():
         global show_active, last_auto_show
@@ -429,14 +403,13 @@ def trigger_show(team: int, source: str):
             if dur <= 0:
                 dur = FALLBACK_DUR
 
-            run_light_show_for_audio_duration(dur, f"[LIGHT T{team}]", stop_event=show_stop_event)
-            show_stop_event.wait(timeout=dur)
+            run_light_show_for_audio_duration(dur, f"[LIGHT T{team}]")
+            time.sleep(dur)
         finally:
             with show_lock:
                 show_active = False
                 if is_auto:
                     last_auto_show = time.time()
-                show_stop_event.clear()
 
     threading.Thread(target=run, daemon=True).start()
 
