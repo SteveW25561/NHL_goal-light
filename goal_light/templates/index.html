@@ -447,6 +447,102 @@
       }
 
       pollStatusLoop();
+
+      const delayClock = document.getElementById("delay_calc_clock");
+      const delayBtn = document.getElementById("delay_calc_btn");
+      const applyBtn = document.getElementById("delay_apply_btn");
+      const resultEl = document.getElementById("delay_calc_result");
+
+      let lastLag = null;
+
+      function setResult(text, isError=false) {
+        if (!resultEl) return;
+        resultEl.textContent = text;
+        resultEl.style.color = isError ? "#fca5a5" : "";
+      }
+
+      function setApplyEnabled(enabled) {
+        if (applyBtn) applyBtn.disabled = !enabled;
+      }
+
+      async function calculateDelay() {
+        if (!delayClock || !delayBtn) return;
+        const clockVal = (delayClock.value || "").trim();
+        if (!clockVal) {
+          setResult("Enter a clock value in MM or MM:SS format.", true);
+          setApplyEnabled(false);
+          lastLag = null;
+          return;
+        }
+
+        delayBtn.disabled = true;
+        setResult("Calculating…", false);
+
+        try {
+          const res = await fetch("/api/stream-delay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ observed_clock: clockVal }),
+          });
+
+          const data = await res.json();
+          if (!data || data.ok !== true) {
+            const msg = (data && data.error) ? data.error : "Unable to compute delay.";
+            setResult(msg, true);
+            setApplyEnabled(false);
+            lastLag = null;
+            return;
+          }
+
+          lastLag = data.lag_seconds;
+          const cappedNote = data.was_capped ? " (capped at 60s)" : "";
+          const liveLabel = data.period ? `${data.period} ${data.live_clock || ""}` : (data.live_clock || "");
+          setResult(`Suggested delay: ${Number(lastLag).toFixed(1)}s${cappedNote}${liveLabel ? ` · Live: ${liveLabel}` : ""}`);
+          setApplyEnabled(true);
+        } catch (e) {
+          setResult("Error talking to the delay API.", true);
+          setApplyEnabled(false);
+          lastLag = null;
+        } finally {
+          delayBtn.disabled = false;
+        }
+      }
+
+      async function applyDelay() {
+        if (!applyBtn || lastLag === null || lastLag === undefined) return;
+
+        applyBtn.disabled = true;
+        setResult("Applying delay…", false);
+
+        try {
+          const res = await fetch("/api/apply-delay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lag_seconds: lastLag }),
+          });
+          const data = await res.json();
+          if (!data || data.ok !== true) {
+            const msg = (data && data.error) ? data.error : "Unable to apply delay.";
+            setResult(msg, true);
+            setApplyEnabled(false);
+            return;
+          }
+          setResult(`Stream delay set to ${Number(data.stream_delay).toFixed(1)}s.`, false);
+          setApplyEnabled(false);
+        } catch (e) {
+          setResult("Error applying delay.", true);
+          setApplyEnabled(true);
+        }
+      }
+
+      if (delayBtn) delayBtn.addEventListener("click", calculateDelay);
+      if (delayClock) delayClock.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          calculateDelay();
+        }
+      });
+      if (applyBtn) applyBtn.addEventListener("click", applyDelay);
     });
   </script>
 </head>
@@ -656,6 +752,24 @@
 
             <label style="margin-top:10px;">Stream delay (seconds)</label>
             <input type="number" step="0.1" name="stream_delay" value="{{ cfg.stream_delay }}">
+
+            <div class="card" style="margin-top:10px; padding:10px; border-radius:12px;">
+              <div class="row" style="gap:8px; align-items:flex-end;">
+                <div style="flex:2;">
+                  <label style="margin-top:0;">Observed clock (MM or MM:SS)</label>
+                  <input id="delay_calc_clock" type="text" placeholder="e.g., 12:34" autocomplete="off">
+                </div>
+                <div style="flex:1;">
+                  <button type="button" id="delay_calc_btn">Calculate</button>
+                </div>
+              </div>
+
+              <div class="muted small" id="delay_calc_result" style="margin-top:8px;">Enter the clock shown on your stream to calculate a suggested delay (capped at 60s).</div>
+
+              <div style="margin-top:8px;">
+                <button type="button" id="delay_apply_btn" disabled>Apply calculated delay</button>
+              </div>
+            </div>
 
             <label>Poll interval during live games (seconds)</label>
             <input type="number" step="0.5" name="poll_interval_seconds" value="{{ cfg.poll_interval_seconds }}">
