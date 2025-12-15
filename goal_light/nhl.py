@@ -2,7 +2,7 @@
 """
 nhl.py – NHL Goal Light controller + Web UI
 Version: 1.9.15 (2025-12-14)
-
+Added game buzzers
 Delta from 1.9.13:
 - Restore lockout behavior so active shows aren't pre-empted by manual presses
   and drop the stop_event dependency for the light show helper.
