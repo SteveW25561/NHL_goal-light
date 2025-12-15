@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.15 (2025-12-14)
-fixed stale games
+Version: 1.9.16 (2025-12-14)
+Add buzzer triggers for period/game end, plus per-team toggles.
 
 Delta from 1.9.13:
 - Restore lockout behavior so active shows aren't pre-empted by manual presses
@@ -82,7 +82,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.14"
+APP_VERSION = "1.9.16"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -109,6 +109,9 @@ FALLBACK_DUR = 6.0
 
 # Conservative caching for gamecenter period/clock
 GAMECENTER_TTL_S = 12.0
+
+# Common NHL state markers
+LIVE_STATES = {"LIVE", "CRIT", "OT", "SO", "SHOOTOUT"}
 
 # ---------------- Globals ----------------
 
@@ -137,6 +140,11 @@ last_scores_by_game = {}  # gid -> {"home": int, "away": int}
 # gamecenter cache: gid -> {"ts": float, "period_label": str, "clock": str}
 gamecenter_cache_lock = threading.Lock()
 gamecenter_cache = {}
+
+# buzzer tracking: gid -> {"last_period_label": str, "last_state": str,
+#                        "fired_periods": set[str], "game_end_fired": bool}
+buzzer_state_lock = threading.Lock()
+buzzer_state = {}
 
 # Anthem tracking (to avoid repeat pre-game plays)
 anthem_lock = threading.Lock()
@@ -244,6 +252,11 @@ DEFAULT_CONFIG = {
     "team1_anthem": "None (lights only)",
     "team2_anthem": "None (lights only)",
 
+    "team1_buzzer_period_end": True,
+    "team1_buzzer_game_end": True,
+    "team2_buzzer_period_end": False,
+    "team2_buzzer_game_end": False,
+
     "team1_volume": 90,
     "team2_volume": 70,
 
@@ -277,6 +290,11 @@ def _normalize_loaded_config(cfg: dict) -> dict:
     out["team1_anthem"] = out.get("team1_anthem") or DEFAULT_CONFIG["team1_anthem"]
     out["team2_anthem"] = out.get("team2_anthem") or DEFAULT_CONFIG["team2_anthem"]
 
+    out["team1_buzzer_period_end"] = boolv(out.get("team1_buzzer_period_end"))
+    out["team1_buzzer_game_end"] = boolv(out.get("team1_buzzer_game_end"))
+    out["team2_buzzer_period_end"] = boolv(out.get("team2_buzzer_period_end"))
+    out["team2_buzzer_game_end"] = boolv(out.get("team2_buzzer_game_end"))
+
     out["poll_interval_seconds"] = safe_float(out.get("poll_interval_seconds"), DEFAULT_CONFIG["poll_interval_seconds"])
     out["stream_delay"] = safe_float(out.get("stream_delay"), DEFAULT_CONFIG["stream_delay"])
 
@@ -306,6 +324,10 @@ def save_config(cfg: dict):
     data["auto_goals_enabled"] = boolv(data.get("auto_goals_enabled"))
     data["physical_button_enabled"] = boolv(data.get("physical_button_enabled"))
     data["quiet_hours_enabled"] = boolv(data.get("quiet_hours_enabled"))
+    data["team1_buzzer_period_end"] = boolv(data.get("team1_buzzer_period_end"))
+    data["team1_buzzer_game_end"] = boolv(data.get("team1_buzzer_game_end"))
+    data["team2_buzzer_period_end"] = boolv(data.get("team2_buzzer_period_end"))
+    data["team2_buzzer_game_end"] = boolv(data.get("team2_buzzer_game_end"))
 
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -716,6 +738,119 @@ def _maybe_trigger_auto_goals(cfg: dict, tracked_games: list):
             log(f"[NHL] Auto-goal: {goals_t2} for Team2/OPP({label}) gid={gid}")
             _delayed_fire(2, goals_t2)
 
+# ---------------- Buzzers ----------------
+
+def _effective_team2_for_game(cfg: dict, home: str, away: str) -> str:
+    team2 = (cfg.get("team2") or "NONE").upper()
+    if team2 != "NONE":
+        return team2
+
+    team1 = (cfg.get("team1") or "VAN").upper()
+    if team1 and home == team1:
+        return (away or "OPP").upper()
+    if team1 and away == team1:
+        return (home or "OPP").upper()
+    return "OPP"
+
+
+def _fire_buzzer_event(cfg: dict, gid: int, teams: list[tuple], event: str, last_period_label: str) -> None:
+    filename = "buzzer.mp3"
+    period_tag = (last_period_label or "").upper() or "?"
+
+    for team_idx, period_enabled, game_enabled, volume in teams:
+        if event == "PERIOD_END" and not period_enabled:
+            continue
+        if event == "GAME_END" and not game_enabled:
+            continue
+
+        try:
+            dur = play_sound(filename, volume)
+            log(
+                f"[BUZZER] Played buzzer for T{team_idx} gid={gid} "
+                f"event={event} period={period_tag} len={dur:.1f}s"
+            )
+        except Exception as e:
+            log(f"[BUZZER] Failed to play buzzer for T{team_idx} gid={gid}: {e}")
+
+
+def _maybe_trigger_buzzer_events(cfg: dict, rec: dict, period_label: str, state: str) -> None:
+    if quiet_active(cfg):
+        return
+
+    gid = safe_int(rec.get("id"), 0)
+    if gid <= 0:
+        return
+
+    home = (rec.get("home") or "").upper()
+    away = (rec.get("away") or "").upper()
+
+    team1 = (cfg.get("team1") or "VAN").upper()
+    team2_eff = _effective_team2_for_game(cfg, home, away)
+
+    teams = []
+    if home == team1 or away == team1:
+        teams.append(
+            (
+                1,
+                boolv(cfg.get("team1_buzzer_period_end")),
+                boolv(cfg.get("team1_buzzer_game_end")),
+                float(cfg.get("team1_volume", 90)) / 100.0,
+            )
+        )
+
+    if team2_eff != "NONE" and (home == team2_eff or away == team2_eff):
+        teams.append(
+            (
+                2,
+                boolv(cfg.get("team2_buzzer_period_end")),
+                boolv(cfg.get("team2_buzzer_game_end")),
+                float(cfg.get("team2_volume", 70)) / 100.0,
+            )
+        )
+
+    if not teams:
+        return
+
+    period_now = (period_label or "").upper()
+    state_now = (state or "").upper()
+
+    with buzzer_state_lock:
+        entry = buzzer_state.get(
+            gid,
+            {
+                "last_period_label": "",
+                "last_state": "",
+                "fired_periods": set(),
+                "game_end_fired": False,
+            },
+        )
+
+        last_period = (entry.get("last_period_label") or "").upper()
+        last_state = (entry.get("last_state") or "").upper()
+        fired_periods = entry.get("fired_periods") or set()
+        game_end_fired = bool(entry.get("game_end_fired"))
+
+        events = []
+
+        if period_now == "INT" and last_period and last_period not in {"INT", ""}:
+            if last_period not in fired_periods:
+                events.append("PERIOD_END")
+                fired_periods.add(last_period)
+
+        if last_state in LIVE_STATES and state_now not in LIVE_STATES and not game_end_fired:
+            events.append("GAME_END")
+            game_end_fired = True
+
+        entry["last_period_label"] = period_now or last_period
+        entry["last_state"] = state_now
+        entry["fired_periods"] = fired_periods
+        entry["game_end_fired"] = game_end_fired
+        buzzer_state[gid] = entry
+
+    for evt in events:
+        # Play once per event outside the lock to avoid blocking the poller.
+        _fire_buzzer_event(cfg, gid, teams, evt, last_period)
+
 # ---------------- Anthems ----------------
 
 def _maybe_trigger_anthems(cfg: dict, tracked_games: list):
@@ -788,8 +923,6 @@ def _maybe_trigger_anthems(cfg: dict, tracked_games: list):
 
 def scoreboard_poller():
     global active_games, last_score_update
-
-    LIVE_STATES = {"LIVE", "CRIT", "OT", "SO", "SHOOTOUT"}
     CANDIDATE_STATES = {"PRE"} | LIVE_STATES
 
     while not stop_event.is_set():
@@ -821,9 +954,6 @@ def scoreboard_poller():
 
             for rec in tracked:
                 state = (rec.get("game_state") or "OFF").upper()
-                if state not in CANDIDATE_STATES:
-                    continue
-
                 gid = safe_int(rec.get("id"), 0)
                 is_live = state in LIVE_STATES
                 is_pre = state == "PRE"
@@ -833,6 +963,15 @@ def scoreboard_poller():
                 if is_live and gid:
                     period_label, clock = fetch_period_and_clock_cached(gid)
                     any_live = True
+
+                # Detect end-of-period and end-of-game transitions for tracked teams.
+                try:
+                    _maybe_trigger_buzzer_events(cfg, rec, period_label, state)
+                except Exception as e:
+                    log(f"[BUZZER] Detection error gid={gid}: {e}")
+
+                if state not in CANDIDATE_STATES:
+                    continue
 
                 out = dict(rec)
                 out["is_live"] = is_live
@@ -1155,6 +1294,11 @@ def config():
         current_config["poll_interval_seconds"] = safe_float(current_config.get("poll_interval_seconds"), DEFAULT_CONFIG["poll_interval_seconds"])
         current_config["stream_delay"] = safe_float(current_config.get("stream_delay"), DEFAULT_CONFIG["stream_delay"])
         current_config["timezone"] = current_config.get("timezone") or DEFAULT_CONFIG["timezone"]
+
+        current_config["team1_buzzer_period_end"] = ("team1_buzzer_period_end" in request.form)
+        current_config["team1_buzzer_game_end"] = ("team1_buzzer_game_end" in request.form)
+        current_config["team2_buzzer_period_end"] = ("team2_buzzer_period_end" in request.form)
+        current_config["team2_buzzer_game_end"] = ("team2_buzzer_game_end" in request.form)
 
         save_config(current_config)
 
