@@ -49,8 +49,14 @@ add_cfg "dtoverlay=wm8960-soundcard"
 
 echo "==> Default ALSA card -> wm8960soundcard"
 sudo tee /etc/asound.conf >/dev/null <<'EOF'
-defaults.pcm.card wm8960soundcard
-defaults.ctl.card wm8960soundcard
+pcm.!default {
+  type plug
+  slave.pcm "hw:wm8960soundcard"
+}
+ctl.!default {
+  type hw
+  card wm8960soundcard
+}
 EOF
 
 echo "==> Passwordless shutdown for the web UI button"
