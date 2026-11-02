@@ -4,24 +4,41 @@ Raspberry Pi Zero 2 W controller that watches NHL games, fires a Bud Light goal 
 
 ## Rebuild from scratch
 
-1. **Flash the card** with Raspberry Pi Imager:
-   - Device: Raspberry Pi Zero 2 W
-   - OS: Raspberry Pi OS Lite (64-bit)
-   - Settings: hostname `pi-goal`, your username/password, SSH on, Wi-Fi **YOUR-2.4GHZ-SSID** (the Zero 2 W is 2.4 GHz / WPA2 only), country CA.
-   - Use a high-endurance card (Samsung PRO Endurance, SanDisk High Endurance).
-2. **Give it a fixed IP** (PI) in UniFi.
-3. **SSH in and install:**
+1. **Flash the card** with Raspberry Pi Imager (use a high-endurance card, e.g. Samsung PRO Endurance or SanDisk High Endurance):
+
+   | Imager screen | Setting |
+   | --- | --- |
+   | Device | Raspberry Pi Zero 2 W |
+   | OS | Raspberry Pi OS (other) → **Raspberry Pi OS Lite (64-bit)** |
+   | Hostname | `goal-light` |
+   | Localisation | Capital city **Ottawa (Canada)**, then time zone **America/Dawson_Creek**, keyboard `us` |
+   | User | `USER` + a password you will remember (there is no other way back in) |
+   | Wi-Fi | SSID **YOUR-2.4GHZ-SSID** (the Zero 2 W is 2.4 GHz / WPA2 only, never the 5G1 SSID), country **CA** |
+   | Remote access | SSH on, password authentication |
+   | Raspberry Pi Connect | off |
+
+2. **Boot it** and make sure UniFi gives it the fixed IP **PI** (the Cloudflare route points there).
+3. **SSH in and install** (one run, then reboot):
    ```bash
+   ssh USER@PI
    sudo apt-get update && sudo apt-get install -y git
    git clone https://github.com/SteveW25561/NHL_goal-light.git ~/NHL_goal-light
-   cd ~/NHL_goal-light && ./install.sh
-   sudo reboot
-   # after it comes back:
-   cd ~/NHL_goal-light && ./install.sh   # second run sets the sound card mixer
+   cd ~/NHL_goal-light && ./install.sh && sudo reboot
    ```
-4. Open `http://PI:8080`, set teams/sounds, **Save Config**.
+4. **Restore your settings** from the Mac, if you have a backup:
+   ```bash
+   scp ~/Downloads/goal-light-config.json USER@PI:~/goal_light/config.json
+   ssh USER@PI sudo systemctl restart goal-light
+   ```
+   Otherwise open `http://PI:8080`, set teams/sounds, **Save Config**.
 
-`install.sh` links `~/goal_light` → the repo's `goal_light/` (the app expects that path), installs packages, enables the WM8960 overlay, sets the default ALSA card, allows passwordless `shutdown` for the web button, sets the time zone, and installs/enables `goal-light.service`.
+### Back up settings (from the Mac)
+
+```bash
+scp USER@PI:~/goal_light/config.json ~/Downloads/goal-light-config.json
+```
+
+`install.sh` links `~/goal_light` → the repo's `goal_light/` (the app expects that path), installs packages, enables the WM8960 overlay, sets the default ALSA card, allows passwordless `shutdown` for the web button, sets the time zone, and installs/enables `goal-light.service`. The service runs `audio-init.sh` before each start to unmute the WM8960 output.
 
 ## Day-to-day
 

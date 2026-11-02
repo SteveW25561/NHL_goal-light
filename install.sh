@@ -3,9 +3,9 @@
 #
 # Usage (as your normal user, NOT root):
 #   git clone https://github.com/SteveW25561/NHL_goal-light.git ~/NHL_goal-light
-#   cd ~/NHL_goal-light && ./install.sh
+#   cd ~/NHL_goal-light && ./install.sh && sudo reboot
 #
-# Safe to re-run. Reboot afterwards so the sound card overlay loads.
+# One run, then reboot. Safe to re-run (e.g. after git pull).
 set -euo pipefail
 
 if [[ $EUID -eq 0 ]]; then
@@ -74,6 +74,7 @@ After=network-online.target sound.target
 [Service]
 User=$APP_USER
 WorkingDirectory=$APP_LINK
+ExecStartPre=-$REPO_DIR/audio-init.sh
 ExecStart=/usr/bin/python3 $APP_LINK/nhl.py
 Restart=always
 RestartSec=5
@@ -85,15 +86,8 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable goal-light.service
 
-# Unmute the WM8960 output path if the card is already present (no-op before first reboot).
-if aplay -l 2>/dev/null | grep -q wm8960; then
-  amixer -c wm8960soundcard sset 'Left Output Mixer PCM' on  >/dev/null 2>&1 || true
-  amixer -c wm8960soundcard sset 'Right Output Mixer PCM' on >/dev/null 2>&1 || true
-  amixer -c wm8960soundcard sset 'Speaker' 90%  >/dev/null 2>&1 || true
-  amixer -c wm8960soundcard sset 'Headphone' 90% >/dev/null 2>&1 || true
-  sudo alsactl store || true
+if systemctl is-active --quiet goal-light.service; then
   sudo systemctl restart goal-light.service
-  echo "==> Done. Web UI: http://$(hostname -I | awk '{print $1}'):8080"
-else
-  echo "==> Done. Reboot now (sudo reboot), then re-run ./install.sh once to set the sound card mixer."
 fi
+echo "==> Done. Reboot now: sudo reboot"
+echo "    Then open http://$(hostname -I | awk '{print $1}'):8080"
