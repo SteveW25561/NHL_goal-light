@@ -22,12 +22,20 @@ DROPIN=/etc/systemd/system/goal-light.service.d/config-path.conf
 FLAG="$CFG_DIR/pending-update"
 LOG="$CFG_DIR/last-update.log"
 
+# raspi-config's non-interactive do_overlayfs also write-protects the boot partition
+# (it adds ",ro" to the /boot/firmware fstab line). Undo that so Save Config works.
+# Only works while the root is writable (before the overlay is active).
+boot_fstab_rw() {
+  sed -i -E "\|^[^#]\S+\s+$BOOT\s| s/,ro([,[:space:]])/\1/g" /etc/fstab
+}
+
 overlay_on() { grep -q "overlayroot=tmpfs" "$BOOT/cmdline.txt" 2>/dev/null; }
 
 status() {
   if overlay_on; then echo "overlay: ENABLED in cmdline.txt (read-only root after reboot)"; else echo "overlay: disabled"; fi
   if mount | grep -q " on / type overlay"; then echo "root right now: read-only overlay"; else echo "root right now: normal (writable)"; fi
   if [[ -f "$DROPIN" ]]; then echo "settings file: $CFG"; else echo "settings file: $OLD_CFG"; fi
+  if mount | grep -E " on $BOOT .*\((ro|ro,)" >/dev/null; then echo "boot partition: READ-ONLY (Save Config will NOT persist)"; else echo "boot partition: writable"; fi
   if [[ -f "$LOG" ]]; then echo "last update:"; tail -n 3 "$LOG" | sed 's/^/  /'; fi
 }
 
@@ -75,6 +83,7 @@ _worker() {
     fi
   } >> "$LOG" 2>&1
   raspi-config nonint do_overlayfs 0 >> "$LOG" 2>&1 || true
+  boot_fstab_rw
   sync
   systemctl reboot
 }
@@ -91,6 +100,7 @@ enable() {
   if ! awk -v b="$BOOT" '$2==b && $4 ~ /uid=/ {f=1} END {exit !f}' /etc/fstab; then
     sudo sed -i -E "\|^[^#]\S+\s+$BOOT\s| s|(\s)(defaults\S*)|\1\2,uid=$(id -u),gid=$(id -g),fmask=0133,dmask=0022|" /etc/fstab
   fi
+  sudo bash -c "$(declare -f boot_fstab_rw); BOOT=$BOOT; boot_fstab_rw"
   sudo systemctl daemon-reload
   sudo umount "$BOOT" && sudo mount "$BOOT"
 
@@ -107,6 +117,11 @@ enable() {
 
   echo "==> Turning on the overlay file system (boot partition stays writable)"
   sudo raspi-config nonint do_overlayfs 0
+  sudo bash -c "$(declare -f boot_fstab_rw); BOOT=$BOOT; boot_fstab_rw"
+  if awk -v b="$BOOT" '$2==b && $4 ~ /(^|,)ro(,|$)/ {f=1} END {exit !f}' /etc/fstab; then
+    echo "WARNING: $BOOT is still read-only in /etc/fstab; Save Config would not persist." >&2
+    exit 1
+  fi
 
   echo "==> Done. Reboot now: sudo reboot"
 }
