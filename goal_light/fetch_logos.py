@@ -50,6 +50,7 @@ NHL_TEAMS: List[Tuple[str, str]] = [
     ("STL", "St. Louis Blues"),
     ("TBL", "Tampa Bay Lightning"),
     ("TOR", "Toronto Maple Leafs"),
+    ("UTA", "Utah Mammoth"),
     ("VAN", "Vancouver Canucks"),
     ("VGK", "Vegas Golden Knights"),
     ("WPG", "Winnipeg Jets"),
@@ -98,11 +99,13 @@ def main() -> None:
     fail = 0
 
     for abbr, name in NHL_TEAMS:
+        existed = os.path.exists(os.path.join(LOGO_DIR, f"{abbr}_light.svg"))
         if fetch_logo(abbr, name):
             success += 1
         else:
             fail += 1
-        time.sleep(0.5)  # gentle pacing
+        if not existed:
+            time.sleep(0.5)  # gentle pacing
 
     log(f"[DONE] Logos fetched. Success={success}, Fail={fail}")
     if fail > 0:

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.19 (2026-11-02)
+Version: 1.9.20 (2026-11-02)
+- Utah Mammoth (UTA) in team list and logo fetcher (replaces Arizona); install.sh fetches missing logos
+
+1.9.19 (2026-11-02)
 - GOAL_LIGHT_CONFIG env var for settings location; atomic config saves
 - readonly.sh: read-only root (overlay) with settings on the boot partition
 
@@ -94,7 +97,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.19"
+APP_VERSION = "1.9.20"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -1191,7 +1194,7 @@ app = Flask(
 )
 
 TEAMS = [
-    ("ANA","Anaheim Ducks"),("ARI","Arizona Coyotes"),("BOS","Boston Bruins"),
+    ("ANA","Anaheim Ducks"),("BOS","Boston Bruins"),
     ("BUF","Buffalo Sabres"),("CGY","Calgary Flames"),("CAR","Carolina Hurricanes"),
     ("CHI","Chicago Blackhawks"),("COL","Colorado Avalanche"),("CBJ","Columbus Blue Jackets"),
     ("DAL","Dallas Stars"),("DET","Detroit Red Wings"),("EDM","Edmonton Oilers"),
@@ -1200,7 +1203,7 @@ TEAMS = [
     ("NYI","New York Islanders"),("NYR","New York Rangers"),("OTT","Ottawa Senators"),
     ("PHI","Philadelphia Flyers"),("PIT","Pittsburgh Penguins"),("SJS","San Jose Sharks"),
     ("SEA","Seattle Kraken"),("STL","St. Louis Blues"),("TBL","Tampa Bay Lightning"),
-    ("TOR","Toronto Maple Leafs"),("VAN","Vancouver Canucks"),("VGK","Vegas Golden Knights"),
+    ("TOR","Toronto Maple Leafs"),("UTA","Utah Mammoth"),("VAN","Vancouver Canucks"),("VGK","Vegas Golden Knights"),
     ("WPG","Winnipeg Jets"),("WSH","Washington Capitals"),
 ]
 

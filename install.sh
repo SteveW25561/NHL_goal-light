@@ -42,6 +42,13 @@ fi
 ln -sfn "$REPO_DIR/goal_light" "$APP_LINK"
 chown -h "$APP_USER:" "$APP_LINK" 2>/dev/null || true
 
+echo "==> Team logos (downloads any missing ones)"
+if [[ $EUID -eq 0 ]]; then
+  runuser -u "$APP_USER" -- python3 "$REPO_DIR/goal_light/fetch_logos.py" | grep -vE '^\[SKIP\]' || true
+else
+  python3 "$REPO_DIR/goal_light/fetch_logos.py" | grep -vE '^\[SKIP\]' || true
+fi
+
 echo "==> Groups (audio, gpio)"
 sudo usermod -aG audio,gpio "$APP_USER" || true
 
