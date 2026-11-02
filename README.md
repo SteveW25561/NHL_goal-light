@@ -12,13 +12,13 @@ Raspberry Pi Zero 2 W controller that watches NHL games, fires a Bud Light goal 
    | OS | Raspberry Pi OS (other) → **Raspberry Pi OS Lite (64-bit)** |
    | Hostname | `goal-light` |
    | Localisation | Capital city **Ottawa (Canada)**, then time zone **America/Dawson_Creek**, keyboard `us` |
-   | User | `USER` + a password you will remember (there is no other way back in) |
-   | Wi-Fi | SSID **YOUR-2.4GHZ-SSID** (the Zero 2 W is 2.4 GHz / WPA2 only, never the 5G1 SSID), country **CA** |
+   | User | a username + password you will remember (there is no other way back in) |
+   | Wi-Fi | a **2.4 GHz, WPA2** SSID (the Zero 2 W cannot join 5 GHz/6 GHz-only or WPA3-only networks), country **CA** |
    | Remote access | SSH on, password authentication |
    | Raspberry Pi Connect | off |
 
-2. **Boot it** and make sure UniFi gives it the fixed IP **PI** (the Cloudflare route points there).
-3. **SSH in and install** (one run, then reboot):
+2. **Boot it** and give it a fixed IP / DHCP reservation in your router (anything pointing at it, e.g. a tunnel or bookmark, keeps working).
+3. **SSH in and install** (one run, then reboot). Below, `USER` and `PI` are your username and the Pi's IP:
    ```bash
    ssh USER@PI
    sudo apt-get update && sudo apt-get install -y git
