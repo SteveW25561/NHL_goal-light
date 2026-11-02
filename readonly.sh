@@ -17,7 +17,9 @@ APP_USER="${APP_USER:-$(id -un)}"
 BOOT=/boot/firmware
 CFG_DIR="$BOOT/goal-light"
 CFG="$CFG_DIR/config.json"
-OLD_CFG="$HOME/goal_light/config.json"
+# Don't rely on $HOME: the boot-time updater runs under systemd without one.
+USER_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+OLD_CFG="$USER_HOME/goal_light/config.json"
 DROPIN=/etc/systemd/system/goal-light.service.d/config-path.conf
 FLAG="$CFG_DIR/pending-update"
 LOG="$CFG_DIR/last-update.log"
