@@ -62,13 +62,24 @@ cd ~/NHL_goal-light
 ./readonly.sh status
 ```
 
-While read-only, **Save Config** still works (it writes only to the boot partition), but anything else you change (git pull, apt upgrade, files in `~`) is discarded at reboot. To update:
+While read-only, **Save Config** still works (it writes only to the boot partition), but anything else you change (git pull, apt upgrade, Wi-Fi changes, files in `~`) is discarded at reboot. Logging in over SSH shows a reminder when it's on.
+
+To pull the latest code from GitHub (hands-off; the Pi reboots twice, ~3-5 minutes):
+
+```bash
+~/NHL_goal-light/readonly.sh update
+~/NHL_goal-light/readonly.sh status     # afterwards: shows the last update result
+```
+
+For manual changes (apt upgrade, Wi-Fi, editing files):
 
 ```bash
 ./readonly.sh disable && sudo reboot
-cd ~/NHL_goal-light && git pull && ./install.sh
+# ...make changes...
 ./readonly.sh enable && sudo reboot
 ```
+
+For active development, leave read-only mode off and turn it on once things are stable.
 
 Back up settings from the Mac in read-only mode with:
 

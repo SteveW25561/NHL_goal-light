@@ -9,13 +9,21 @@
 set -euo pipefail
 
 if [[ $EUID -eq 0 ]]; then
-  echo "Run as your normal user (the script uses sudo where needed)." >&2
-  exit 1
+  # Root is only allowed for the unattended updater (readonly.sh update), which
+  # passes the app user in APP_USER. sudo becomes a no-op.
+  if [[ -z "${APP_USER:-}" || "${APP_USER}" == root ]]; then
+    echo "Run as your normal user (the script uses sudo where needed)." >&2
+    exit 1
+  fi
+  sudo() { "$@"; }
+  USER_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+else
+  APP_USER="$(id -un)"
+  USER_HOME="$HOME"
 fi
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_LINK="$HOME/goal_light"          # nhl.py expects its files here
-APP_USER="$(id -un)"
+APP_LINK="$USER_HOME/goal_light"     # nhl.py expects its files here
 SERVICE=/etc/systemd/system/goal-light.service
 BOOT_CFG=/boot/firmware/config.txt
 TZ_NAME="${TZ_NAME:-America/Dawson_Creek}"   # BC permanent UTC-7 (see README)
@@ -32,6 +40,7 @@ if [[ -e "$APP_LINK" && ! -L "$APP_LINK" ]]; then
   mv "$APP_LINK" "${APP_LINK}.bak.$(date +%s)"
 fi
 ln -sfn "$REPO_DIR/goal_light" "$APP_LINK"
+chown -h "$APP_USER:" "$APP_LINK" 2>/dev/null || true
 
 echo "==> Groups (audio, gpio)"
 sudo usermod -aG audio,gpio "$APP_USER" || true
@@ -93,6 +102,37 @@ WantedBy=multi-user.target
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable goal-light.service
+
+echo "==> Unattended updater (used by ./readonly.sh update)"
+sudo tee /etc/systemd/system/goal-light-update.service >/dev/null <<EOF
+[Unit]
+Description=NHL Goal Light pending update (read-only mode)
+ConditionPathExists=/boot/firmware/goal-light/pending-update
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+Environment=APP_USER=$APP_USER
+ExecStart=$REPO_DIR/readonly.sh _worker
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable goal-light-update.service
+
+echo "==> Login reminder when read-only mode is on"
+sudo tee /etc/profile.d/goal-light-readonly.sh >/dev/null <<EOF
+if mount | grep -q " on / type overlay"; then
+  echo ""
+  echo "  *** READ-ONLY MODE: changes outside Save Config are lost at reboot ***"
+  echo "  Update the app:   $REPO_DIR/readonly.sh update"
+  echo "  Make changes:     $REPO_DIR/readonly.sh disable && sudo reboot"
+  echo ""
+fi
+EOF
 
 if systemctl is-active --quiet goal-light.service; then
   sudo systemctl restart goal-light.service
