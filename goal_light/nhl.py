@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.17 (2025-12-14)
+Version: 1.9.18 (2026-11-02)
+- BC permanent UTC-7 time zone option (America/Dawson_Creek), now the default
+- install.sh + systemd service for one-command rebuilds
+
+1.9.17 (2025-12-14)
 - add shutdown  in webui
 
 1.9.16
@@ -86,7 +90,7 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.17"
+APP_VERSION = "1.9.18"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
@@ -268,7 +272,7 @@ DEFAULT_CONFIG = {
     "stream_delay": 10.0,
     "poll_interval_seconds": 5.0,
 
-    "timezone": "America/Vancouver",
+    "timezone": "America/Dawson_Creek",
     "physical_button_enabled": True,
 
     "quiet_hours_enabled": False,
@@ -1177,6 +1181,7 @@ TEAMS = [
 ]
 
 TIMEZONES = [
+    ("America/Dawson_Creek","BC (permanent UTC-7)"),
     ("America/Vancouver","Pacific"),
     ("America/Edmonton","Mountain"),
     ("America/Winnipeg","Central"),
