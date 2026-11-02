@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 nhl.py – NHL Goal Light controller + Web UI
-Version: 1.9.18 (2026-11-02)
+Version: 1.9.19 (2026-11-02)
+- GOAL_LIGHT_CONFIG env var for settings location; atomic config saves
+- readonly.sh: read-only root (overlay) with settings on the boot partition
+
+1.9.18 (2026-11-02)
 - BC permanent UTC-7 time zone option (America/Dawson_Creek), now the default
 - install.sh + systemd service for one-command rebuilds
 
@@ -90,11 +94,14 @@ def detect_ui_version() -> str:
     return "unknown"
 
 
-APP_VERSION = "1.9.18"
+APP_VERSION = "1.9.19"
 UI_VERSION = detect_ui_version()
 
 BASE_DIR = os.path.expanduser("~/goal_light")
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+LEGACY_CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+# GOAL_LIGHT_CONFIG lets the settings live outside the code dir, e.g. on the
+# writable boot partition when the root filesystem is read-only (readonly.sh).
+CONFIG_PATH = os.environ.get("GOAL_LIGHT_CONFIG") or LEGACY_CONFIG_PATH
 SOUNDS_DIR = os.path.join(BASE_DIR, "sounds")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 LOGOS_DIR = os.path.join(STATIC_DIR, "logos")
@@ -312,9 +319,10 @@ def _normalize_loaded_config(cfg: dict) -> dict:
 
 def load_config() -> dict:
     cfg = {}
-    if os.path.exists(CONFIG_PATH):
+    path = CONFIG_PATH if os.path.exists(CONFIG_PATH) else LEGACY_CONFIG_PATH
+    if os.path.exists(path):
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 cfg = json.load(f) or {}
         except Exception:
             cfg = {}
@@ -337,9 +345,25 @@ def save_config(cfg: dict):
     data["team2_buzzer_period_end"] = boolv(data.get("team2_buzzer_period_end"))
     data["team2_buzzer_game_end"] = boolv(data.get("team2_buzzer_game_end"))
 
+    # Atomic write: temp file + fsync + rename, so a power cut mid-save
+    # leaves either the old or the new file, never a half-written one.
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        cfg_dir = os.path.dirname(CONFIG_PATH) or "."
+        os.makedirs(cfg_dir, exist_ok=True)
+        tmp_path = CONFIG_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, CONFIG_PATH)
+        try:
+            dfd = os.open(cfg_dir, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except Exception:
+            pass
     except Exception as e:
         log(f"[CONFIG] Failed to save config: {e}")
 

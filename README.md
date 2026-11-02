@@ -50,6 +50,32 @@ cd ~/NHL_goal-light && git pull && sudo systemctl restart goal-light   # update
 
 `config.json` (your settings) lives in `goal_light/` and is git-ignored.
 
+## Protecting the SD card
+
+`install.sh` already keeps logs in RAM and mounts the root filesystem with `noatime`, so the card is written much less. Always use the web UI's **Shut down Pi** button before unplugging, and a solid 5 V / 2.5 A supply (`vcgencmd get_throttled` should say `throttled=0x0`).
+
+For the strongest protection, run the root filesystem read-only:
+
+```bash
+cd ~/NHL_goal-light
+./readonly.sh enable && sudo reboot    # settings move to /boot/firmware/goal-light/config.json
+./readonly.sh status
+```
+
+While read-only, **Save Config** still works (it writes only to the boot partition), but anything else you change (git pull, apt upgrade, files in `~`) is discarded at reboot. To update:
+
+```bash
+./readonly.sh disable && sudo reboot
+cd ~/NHL_goal-light && git pull && ./install.sh
+./readonly.sh enable && sudo reboot
+```
+
+Back up settings from the Mac in read-only mode with:
+
+```bash
+scp USER@PI:/boot/firmware/goal-light/config.json ~/Downloads/goal-light-config.json
+```
+
 ## Time zone
 
 BC moved to permanent UTC-7 in Nov 2026; older tzdata still switches `America/Vancouver` to PST. The installer and the app default to `America/Dawson_Creek` (fixed UTC-7). Once Debian's tzdata catches up you can pick "Pacific" again in the UI.

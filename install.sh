@@ -59,6 +59,14 @@ ctl.!default {
 }
 EOF
 
+echo "==> Fewer SD card writes (logs in RAM, noatime)"
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=20M\n' | sudo tee /etc/systemd/journald.conf.d/volatile.conf >/dev/null
+sudo systemctl restart systemd-journald || true
+if ! awk '$2=="/" && $4 ~ /noatime/ {f=1} END {exit !f}' /etc/fstab; then
+  sudo sed -i -E '/^[^#]\S+\s+\/\s/ s/(\s)(defaults\S*)/\1\2,noatime/' /etc/fstab
+fi
+
 echo "==> Passwordless shutdown for the web UI button"
 echo "$APP_USER ALL=(root) NOPASSWD: /usr/sbin/shutdown, /sbin/shutdown" | sudo tee /etc/sudoers.d/goal-light >/dev/null
 sudo chmod 440 /etc/sudoers.d/goal-light
